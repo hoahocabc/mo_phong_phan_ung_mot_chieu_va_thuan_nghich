@@ -1,0 +1,78 @@
+<!DOCTYPE html>
+<html lang="vi">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+  <title>Mô Phỏng Phản Ứng Thuận Nghịch 3D - Hóa Học ABC</title>
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/p5.js/1.9.4/p5.min.js"></script>
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/p5.js/1.9.4/addons/p5.sound.min.js"></script>
+  <link rel="stylesheet" type="text/css" href="style.css">
+</head>
+<body>
+  <div id="app">
+    <div id="sidebar">
+      <div class="title-block">
+        <h1>PHẢN ỨNG MỘT CHIỀU VÀ THUẬN NGHỊCH</h1>
+        <h2>HÓA HỌC ABC</h2>
+      </div>
+
+      <div class="control-group">
+        <label for="countA">Số lượng phân tử A (tối đa 200)</label>
+        <input type="number" id="countA" min="0" max="200" value="0" inputmode="numeric">
+      </div>
+
+      <div class="control-group">
+        <label for="countB">Số lượng phân tử B (tối đa 200)</label>
+        <input type="number" id="countB" min="0" max="200" value="0" inputmode="numeric">
+      </div>
+
+      <div class="control-group">
+        <label>Chế độ phản ứng</label>
+        <div class="btn-row">
+          <button id="modeReversibleBtn" class="btn btn-mode active">⇌ THUẬN NGHỊCH</button>
+          <button id="modeOneWayBtn" class="btn btn-mode">→ MỘT CHIỀU</button>
+        </div>
+      </div>
+
+      <div class="control-group">
+        <label for="speedSlider">Tốc độ di chuyển: <span id="speedVal">3</span></label>
+        <input type="range" id="speedSlider" min="0" max="10" step="1" value="3">
+      </div>
+
+      <div class="control-group">
+        <label for="volumeSlider">Âm lượng va chạm: <span id="volVal">5</span></label>
+        <input type="range" id="volumeSlider" min="0" max="10" step="1" value="5">
+      </div>
+
+      <div class="btn-row">
+        <button id="playBtn" class="btn btn-play">▶ PLAY</button>
+        <button id="resetBtn" class="btn btn-reset">⟲ RESET</button>
+      </div>
+
+      <div class="btn-row">
+        <button id="labelBtn" class="btn btn-label on">🏷 NHÃN: BẬT</button>
+      </div>
+
+      <div class="legend">
+        <div class="legend-item"><span class="dot" style="background:#2f6bff"></span>A</div>
+        <div class="legend-item"><span class="dot" style="background:#22c55e"></span>B</div>
+        <div class="legend-item"><span class="dot" style="background:#d61fd6"></span>C</div>
+        <div class="legend-item"><span class="dot" style="background:#ff8c1a"></span>D</div>
+      </div>
+      <p class="hint">Kéo chuột / vuốt để xoay · Lăn chuột / chụm 2 ngón để zoom</p>
+    </div>
+
+    <div id="canvas-holder">
+      <div id="countsPanel">
+        <div class="counts-title">SỐ LƯỢNG</div>
+        <div class="counts-row"><span class="counts-dot" style="background:#2f6bff"></span>A: <b id="cntA">0</b></div>
+        <div class="counts-row"><span class="counts-dot" style="background:#22c55e"></span>B: <b id="cntB">0</b></div>
+        <div class="counts-row"><span class="counts-dot" style="background:#d61fd6"></span>C: <b id="cntC">0</b></div>
+        <div class="counts-row"><span class="counts-dot" style="background:#ff8c1a"></span>D: <b id="cntD">0</b></div>
+      </div>
+    </div>
+  </div>
+
+  <script src="sketch.js"></script>
+</body>
+</html>
