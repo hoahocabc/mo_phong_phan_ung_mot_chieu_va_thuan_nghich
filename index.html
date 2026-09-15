@@ -53,22 +53,54 @@
         <button id="labelBtn" class="btn btn-label on">🏷 NHÃN: BẬT</button>
       </div>
 
+      <div class="control-group">
+        <label>Đồ thị</label>
+        <div class="btn-row">
+          <button id="concChartBtn" class="btn btn-chart">📈 NỒNG ĐỘ: TẮT</button>
+        </div>
+        <div class="btn-row">
+          <button id="collisionChartBtn" class="btn btn-chart">💥 VA CHẠM: TẮT</button>
+        </div>
+      </div>
+
       <div class="legend">
         <div class="legend-item"><span class="dot" style="background:#2f6bff"></span>A</div>
         <div class="legend-item"><span class="dot" style="background:#22c55e"></span>B</div>
         <div class="legend-item"><span class="dot" style="background:#d61fd6"></span>C</div>
         <div class="legend-item"><span class="dot" style="background:#ff8c1a"></span>D</div>
       </div>
-      <p class="hint">Kéo chuột / vuốt để xoay · Lăn chuột / chụm 2 ngón để zoom</p>
+      <p class="hint">Kéo chuột / vuốt để xoay · Lăn chuột / chụm 2 ngón để zoom · Bấm vào đồ thị để xem số liệu</p>
     </div>
 
     <div id="canvas-holder">
-      <div id="countsPanel">
-        <div class="counts-title">SỐ LƯỢNG</div>
-        <div class="counts-row"><span class="counts-dot" style="background:#2f6bff"></span>A: <b id="cntA">0</b></div>
-        <div class="counts-row"><span class="counts-dot" style="background:#22c55e"></span>B: <b id="cntB">0</b></div>
-        <div class="counts-row"><span class="counts-dot" style="background:#d61fd6"></span>C: <b id="cntC">0</b></div>
-        <div class="counts-row"><span class="counts-dot" style="background:#ff8c1a"></span>D: <b id="cntD">0</b></div>
+      <div id="leftPanels">
+        <div id="concChartPanel" class="chart-panel hidden">
+          <div class="chart-title">NỒNG ĐỘ THEO THỜI GIAN</div>
+          <div class="chart-legend">
+            <span><span class="chart-dot" style="background:#ffffff"></span>A + B</span>
+            <span><span class="chart-dot" style="background:#ff8c1a"></span>C + D</span>
+          </div>
+          <canvas id="concChartCanvas"></canvas>
+        </div>
+
+        <div id="collisionChartPanel" class="chart-panel hidden">
+          <div class="chart-title">SỐ VA CHẠM TRONG 1 GIÂY</div>
+          <div class="chart-legend">
+            <span><span class="chart-dot" style="background:#ffffff"></span>A × B</span>
+            <span><span class="chart-dot" style="background:#ff8c1a"></span>C × D</span>
+          </div>
+          <canvas id="collisionChartCanvas"></canvas>
+        </div>
+      </div>
+
+      <div id="rightPanels">
+        <div id="countsPanel">
+          <div class="counts-title">SỐ LƯỢNG</div>
+          <div class="counts-row"><span class="counts-dot" style="background:#2f6bff"></span>A: <b id="cntA">0</b></div>
+          <div class="counts-row"><span class="counts-dot" style="background:#22c55e"></span>B: <b id="cntB">0</b></div>
+          <div class="counts-row"><span class="counts-dot" style="background:#d61fd6"></span>C: <b id="cntC">0</b></div>
+          <div class="counts-row"><span class="counts-dot" style="background:#ff8c1a"></span>D: <b id="cntD">0</b></div>
+        </div>
       </div>
     </div>
   </div>

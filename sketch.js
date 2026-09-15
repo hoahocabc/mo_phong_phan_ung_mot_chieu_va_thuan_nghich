@@ -1,3 +1,4 @@
+// noprotect
 // ============================================================
 // MÔ PHỎNG PHẢN ỨNG THUẬN NGHỊCH 3D - HÓA HỌC ABC
 // A + B  <=>  C + D  (hoặc A + B  -->  C + D  ở chế độ một chiều)
@@ -23,6 +24,11 @@ let reactionMode = 'reversible';
 let canvasHolder;
 let labelCanvas, labelCtx; // separate 2D overlay canvas for crisp, correctly placed labels
 
+// True while the pointer is hovering the sidebar or any display panel
+// (counts / charts). While true, canvas orbit/zoom must be disabled so
+// interacting with the UI never rotates or zooms the 3D scene underneath.
+let mouseOverUI = false;
+
 // Captured camera matrices/position for this frame (used to project 3D -> 2D for labels)
 let frameMV = null;
 let frameP = null;
@@ -39,6 +45,7 @@ let frameCellSize = 24;
 
 // UI refs
 let countAInput, countBInput, speedSlider, volumeSlider, playBtn, resetBtn, labelBtn;
+let concChartBtn, collisionChartBtn;
 let modeReversibleBtn, modeOneWayBtn;
 let speedValLabel, volValLabel;
 let cntAEl, cntBEl, cntCEl, cntDEl;
@@ -67,6 +74,36 @@ const LABEL_COLORS = {
 // Base (unscaled) radii — actual rendered radius = base * radiusScale
 const BASE_RADIUS = { A: 13, B: 13, C: 15, D: 15 };
 
+// ---------------- Charts (both driven by a shared simulation clock) ----------------
+let simTime = 0; // seconds of simulation time (only advances while playing)
+let chartSampleAccumulator = 0;
+const CHART_SAMPLE_INTERVAL = 0.1; // seconds between recorded concentration samples
+const CHART_MAX_SAMPLES = 6000; // ~10 minutes of history at the interval above
+
+// Concentration chart: total A+B vs total C+D over time
+let showConcChart = false;
+let concChartCanvas, concChartCtx;
+let concHistory = []; // { t, ab, cd }
+let concSelectedIndex = -1; // index into concHistory currently selected by a click
+
+// Collision chart: number of A-B and C-D collisions that occurred WITHIN
+// each 1-second window (not a running/cumulative total). Every full
+// second of simulation time, the counters below are flushed into a new
+// history sample and reset back to zero for the next second.
+let showCollisionChart = false;
+let collisionChartCanvas, collisionChartCtx;
+let collisionHistory = []; // { t, ab, cd }  -- ab/cd = collisions THAT SECOND
+const COLLISION_WINDOW = 1.0; // seconds per bucket
+let collisionWindowAB = 0;
+let collisionWindowCD = 0;
+let collisionWindowStart = 0; // simTime at which the current window began
+let collisionSelectedIndex = -1; // index into collisionHistory currently selected by a click
+
+// State cho việc Drag to Zoom đồ thị
+let concChartZoom = null;
+let collisionChartZoom = null;
+let chartDragState = { canvas: null, startX: 0, currentX: 0 };
+
 function setup() {
   canvasHolder = document.getElementById('canvas-holder');
   const cnv = createCanvas(canvasHolder.offsetWidth, canvasHolder.offsetHeight, WEBGL);
@@ -76,6 +113,8 @@ function setup() {
   pixelDensity(Math.min(2, window.devicePixelRatio || 1));
 
   setupLabelCanvas();
+  setupChartCanvases();
+  setupUIHoverGuards();
 
   // UI bindings
   countAInput = select('#countA');
@@ -85,6 +124,8 @@ function setup() {
   playBtn = select('#playBtn');
   resetBtn = select('#resetBtn');
   labelBtn = select('#labelBtn');
+  concChartBtn = select('#concChartBtn');
+  collisionChartBtn = select('#collisionChartBtn');
   modeReversibleBtn = select('#modeReversibleBtn');
   modeOneWayBtn = select('#modeOneWayBtn');
   speedValLabel = select('#speedVal');
@@ -111,11 +152,33 @@ function setup() {
   playBtn.mousePressed(togglePlay);
   resetBtn.mousePressed(resetAll);
   labelBtn.mousePressed(toggleLabels);
+  concChartBtn.mousePressed(toggleConcChart);
+  collisionChartBtn.mousePressed(toggleCollisionChart);
   modeReversibleBtn.mousePressed(() => setReactionMode('reversible'));
   modeOneWayBtn.mousePressed(() => setReactionMode('oneway'));
 
   initSoundPool();
   updateCountsPanel();
+  recordConcSample();   // seed with an initial point at t = 0
+  recordCollisionZeroSample(); // seed with an initial (0,0) point at t = 0
+}
+
+// Blocks canvas orbit/zoom while the pointer hovers the sidebar or any display panel
+function setupUIHoverGuards() {
+  const uiElements = [
+    document.getElementById('sidebar'),
+    document.getElementById('countsPanel'),
+    document.getElementById('concChartPanel'),
+    document.getElementById('collisionChartPanel')
+  ];
+  
+  // Dùng forEach chuẩn Functional
+  uiElements.forEach(el => {
+    if (el) {
+      el.addEventListener('pointerenter', () => { mouseOverUI = true; });
+      el.addEventListener('pointerleave', () => { mouseOverUI = false; });
+    }
+  });
 }
 
 function setReactionMode(mode) {
@@ -149,7 +212,412 @@ function resizeLabelCanvas() {
   labelCtx.setTransform(dpr, 0, 0, dpr, 0, 0);
 }
 
-// Multiply a column-major 4x4 matrix (array of 16) by a vec4
+// ---------------- Chart overlays (2D canvases, HTML-positioned panels) ----------------
+function setupChartCanvases() {
+  concChartCanvas = document.getElementById('concChartCanvas');
+  concChartCtx = concChartCanvas.getContext('2d');
+
+  collisionChartCanvas = document.getElementById('collisionChartCanvas');
+  collisionChartCtx = collisionChartCanvas.getContext('2d');
+
+  resizeChartCanvases();
+
+  // Bắt sự kiện Quét chọn để Zoom và Klick cho biểu đồ Nồng Độ
+  setupZoomableChart(concChartCanvas, concHistory, 
+    (idx) => { concSelectedIndex = idx; drawConcChart(); },
+    () => drawConcChart(),
+    (zoom) => { concChartZoom = zoom; },
+    () => concChartZoom
+  );
+
+  // Bắt sự kiện Quét chọn để Zoom và Klick cho biểu đồ Va chạm
+  setupZoomableChart(collisionChartCanvas, collisionHistory, 
+    (idx) => { collisionSelectedIndex = idx; drawCollisionChart(); },
+    () => drawCollisionChart(),
+    (zoom) => { collisionChartZoom = zoom; },
+    () => collisionChartZoom
+  );
+}
+
+// Logic tổng quát bắt sự kiện kéo thả (Drag) cho bất kỳ biểu đồ nào
+function setupZoomableChart(canvasEl, history, onSelect, onRedraw, setZoom, getZoom) {
+  canvasEl.addEventListener('pointerdown', (evt) => {
+    if (history.length === 0 || evt.button !== 0) return;
+    let rect = canvasEl.getBoundingClientRect();
+    chartDragState.canvas = canvasEl;
+    chartDragState.startX = evt.clientX - rect.left;
+    chartDragState.currentX = chartDragState.startX;
+    canvasEl.setPointerCapture(evt.pointerId);
+  });
+
+  canvasEl.addEventListener('pointermove', (evt) => {
+    if (chartDragState.canvas === canvasEl) {
+      let rect = canvasEl.getBoundingClientRect();
+      chartDragState.currentX = evt.clientX - rect.left;
+      onRedraw();
+    }
+  });
+
+  canvasEl.addEventListener('pointerup', (evt) => {
+    if (chartDragState.canvas === canvasEl) {
+      chartDragState.canvas = null;
+      canvasEl.releasePointerCapture(evt.pointerId);
+
+      let dx = chartDragState.currentX - chartDragState.startX;
+      if (Math.abs(dx) > 5) {
+        // Quét chuột thành công -> Tính khoảng thời gian để Zoom
+        let t1 = getChartTimeForX(chartDragState.startX, canvasEl, history, getZoom());
+        let t2 = getChartTimeForX(chartDragState.currentX, canvasEl, history, getZoom());
+        setZoom({ min: Math.min(t1, t2), max: Math.max(t1, t2) });
+      } else {
+        // Click bình thường -> Chọn điểm
+        let tClicked = getChartTimeForX(chartDragState.startX, canvasEl, history, getZoom());
+        let bestIdx = 0;
+        let bestDiff = Infinity;
+        
+        history.forEach((h, i) => {
+          let diff = Math.abs(h.t - tClicked);
+          if (diff < bestDiff) {
+            bestDiff = diff;
+            bestIdx = i;
+          }
+        });
+        
+        onSelect(bestIdx);
+      }
+      onRedraw();
+    }
+  });
+
+  // Click đúp để Reset Zoom
+  canvasEl.addEventListener('dblclick', () => {
+    setZoom(null);
+    onRedraw();
+  });
+}
+
+function getChartTimeForX(x, canvasEl, history, zoom) {
+  const w = canvasEl.clientWidth || 240;
+  const padLeft = 30;
+  const plotW = Math.max(1, w - padLeft - 8);
+
+  let minT = history[0].t;
+  let maxT = history[history.length - 1].t;
+  if (zoom) {
+    minT = zoom.min;
+    maxT = zoom.max;
+  }
+  if (maxT - minT < 1) maxT = minT + 1;
+
+  let clampedX = constrain(x, padLeft, padLeft + plotW);
+  return minT + ((clampedX - padLeft) / plotW) * (maxT - minT);
+}
+
+function resizeChartCanvases() {
+  resizeOneChartCanvas(concChartCanvas, concChartCtx);
+  resizeOneChartCanvas(collisionChartCanvas, collisionChartCtx);
+}
+
+function resizeOneChartCanvas(canvasEl, ctx) {
+  if (!canvasEl) return;
+  const dpr = Math.min(2, window.devicePixelRatio || 1);
+  const w = canvasEl.clientWidth || 240;
+  const h = canvasEl.clientHeight || 130;
+  canvasEl.width = Math.floor(w * dpr);
+  canvasEl.height = Math.floor(h * dpr);
+  ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
+}
+
+function toggleConcChart() {
+  showConcChart = !showConcChart;
+  let panel = document.getElementById('concChartPanel');
+  if (showConcChart) {
+    concChartBtn.html('📈 NỒNG ĐỘ: BẬT');
+    concChartBtn.addClass('on');
+    panel.classList.remove('hidden');
+    resizeOneChartCanvas(concChartCanvas, concChartCtx);
+    drawConcChart();
+  } else {
+    concChartBtn.html('📈 NỒNG ĐỘ: TẮT');
+    concChartBtn.removeClass('on');
+    panel.classList.add('hidden');
+  }
+}
+
+function toggleCollisionChart() {
+  showCollisionChart = !showCollisionChart;
+  let panel = document.getElementById('collisionChartPanel');
+  if (showCollisionChart) {
+    collisionChartBtn.html('💥 VA CHẠM: BẬT');
+    collisionChartBtn.addClass('on');
+    panel.classList.remove('hidden');
+    resizeOneChartCanvas(collisionChartCanvas, collisionChartCtx);
+    drawCollisionChart();
+  } else {
+    collisionChartBtn.html('💥 VA CHẠM: TẮT');
+    collisionChartBtn.removeClass('on');
+    panel.classList.add('hidden');
+  }
+}
+
+function recordConcSample() {
+  let ab = 0, cd = 0;
+  molecules.forEach(m => {
+    if (m.type === 'A' || m.type === 'B') ab++;
+    else cd++;
+  });
+  
+  concHistory.push({ t: simTime, ab, cd });
+  if (concHistory.length > CHART_MAX_SAMPLES) {
+    concHistory.splice(0, concHistory.length - CHART_MAX_SAMPLES);
+    if (concSelectedIndex >= 0) concSelectedIndex = Math.max(0, concSelectedIndex - 1);
+  }
+}
+
+function recordCollisionZeroSample() {
+  collisionHistory.push({ t: 0, ab: 0, cd: 0 });
+}
+
+function flushCollisionWindow(windowEndTime) {
+  collisionHistory.push({ t: windowEndTime, ab: collisionWindowAB, cd: collisionWindowCD });
+  if (collisionHistory.length > CHART_MAX_SAMPLES) {
+    collisionHistory.splice(0, collisionHistory.length - CHART_MAX_SAMPLES);
+    if (collisionSelectedIndex >= 0) collisionSelectedIndex = Math.max(0, collisionSelectedIndex - 1);
+  }
+  collisionWindowAB = 0;
+  collisionWindowCD = 0;
+}
+
+// Rendering đồ thị tích hợp zoom và selection box
+function renderLineChart(ctx, canvasEl, history, yLabel, seriesAKey, seriesBKey, seriesALabel, seriesBLabel, selectedIndex, zoom, activeCanvas) {
+  const w = canvasEl.clientWidth || 240;
+  const h = canvasEl.clientHeight || 130;
+  ctx.clearRect(0, 0, w, h);
+
+  ctx.fillStyle = 'rgba(0, 0, 0, 0.35)';
+  ctx.fillRect(0, 0, w, h);
+
+  const padLeft = 30;
+  const padRight = 8;
+  const padTop = 8;
+  const padBottom = 20;
+  const plotW = Math.max(1, w - padLeft - padRight);
+  const plotH = Math.max(1, h - padTop - padBottom);
+
+  if (history.length < 2) {
+    ctx.fillStyle = 'rgba(255,255,255,0.4)';
+    ctx.font = '11px Arial, sans-serif';
+    ctx.textAlign = 'center';
+    ctx.fillText('Đang chờ dữ liệu...', w / 2, h / 2);
+    return;
+  }
+
+  let maxT = history[history.length - 1].t;
+  let minT = history[0].t;
+  
+  if (zoom) {
+    minT = zoom.min;
+    maxT = zoom.max;
+  }
+  if (maxT - minT < 1) maxT = minT + 1;
+
+  let maxN = 1;
+  history.forEach(s => {
+    if (s.t >= minT && s.t <= maxT) {
+      maxN = Math.max(maxN, s[seriesAKey], s[seriesBKey]);
+    }
+  });
+  maxN = Math.ceil(maxN * 1.15) || 1;
+
+  function xFor(t) { return padLeft + ((t - minT) / (maxT - minT)) * plotW; }
+  function yFor(n) { return padTop + plotH - (n / maxN) * plotH; }
+
+  // Axes
+  ctx.strokeStyle = 'rgba(255,255,255,0.25)';
+  ctx.lineWidth = 1;
+  ctx.beginPath();
+  ctx.moveTo(padLeft, padTop);
+  ctx.lineTo(padLeft, padTop + plotH);
+  ctx.lineTo(padLeft + plotW, padTop + plotH);
+  ctx.stroke();
+
+  // Y axis ticks + label
+  ctx.fillStyle = 'rgba(255,255,255,0.55)';
+  ctx.font = '10px Arial, sans-serif';
+  ctx.textAlign = 'right';
+  ctx.textBaseline = 'middle';
+  ctx.fillText(String(maxN), padLeft - 4, padTop + 2);
+  ctx.fillText('0', padLeft - 4, padTop + plotH);
+  ctx.save();
+  ctx.translate(8, padTop + plotH / 2);
+  ctx.rotate(-Math.PI / 2);
+  ctx.textAlign = 'center';
+  ctx.fillText(yLabel, 0, 0);
+  ctx.restore();
+
+  // X axis ticks + label
+  ctx.textAlign = 'left';
+  ctx.textBaseline = 'top';
+  ctx.fillText(minT.toFixed(0), padLeft, padTop + plotH + 4);
+  ctx.textAlign = 'right';
+  ctx.fillText(maxT.toFixed(0), padLeft + plotW, padTop + plotH + 4);
+  ctx.textAlign = 'center';
+  ctx.fillText('t (s)', padLeft + plotW / 2, padTop + plotH + 4);
+
+  // Clipping để Chart line không tràn ra ngoài ranh giới khi Zoom
+  ctx.save();
+  ctx.beginPath();
+  ctx.rect(padLeft, padTop, plotW, plotH);
+  ctx.clip();
+
+  // Series A (white)
+  ctx.strokeStyle = '#ffffff';
+  ctx.lineWidth = 1.6;
+  ctx.beginPath();
+  let firstA = true;
+  history.forEach(s => {
+    let x = xFor(s.t);
+    let y = yFor(s[seriesAKey]);
+    if (firstA) { ctx.moveTo(x, y); firstA = false; }
+    else ctx.lineTo(x, y);
+  });
+  ctx.stroke();
+
+  // Series B (orange)
+  ctx.strokeStyle = '#ff8c1a';
+  ctx.lineWidth = 1.6;
+  ctx.beginPath();
+  let firstB = true;
+  history.forEach(s => {
+    let x = xFor(s.t);
+    let y = yFor(s[seriesBKey]);
+    if (firstB) { ctx.moveTo(x, y); firstB = false; }
+    else ctx.lineTo(x, y);
+  });
+  ctx.stroke();
+
+  // Selected sample: dashed vertical marker + scientific readout
+  let markerTextData = null;
+  if (selectedIndex >= 0 && selectedIndex < history.length) {
+    let s = history[selectedIndex];
+    if (s.t >= minT && s.t <= maxT) {
+      let x = xFor(s.t);
+
+      ctx.save();
+      ctx.setLineDash([4, 3]);
+      ctx.strokeStyle = 'rgba(255, 255, 255, 0.85)';
+      ctx.lineWidth = 1;
+      ctx.beginPath();
+      ctx.moveTo(x, padTop);
+      ctx.lineTo(x, padTop + plotH);
+      ctx.stroke();
+      ctx.restore();
+
+      let yA = yFor(s[seriesAKey]);
+      let yB = yFor(s[seriesBKey]);
+      ctx.fillStyle = '#ffffff';
+      ctx.beginPath(); ctx.arc(x, yA, 3, 0, Math.PI * 2); ctx.fill();
+      ctx.fillStyle = '#ff8c1a';
+      ctx.beginPath(); ctx.arc(x, yB, 3, 0, Math.PI * 2); ctx.fill();
+      
+      markerTextData = { x, s };
+    }
+  }
+
+  // Khối kéo thả chọn vùng (Drag Selection Box) và hiển thị thời gian
+  if (chartDragState.canvas === activeCanvas) {
+    ctx.fillStyle = 'rgba(100, 150, 255, 0.3)';
+    let rx = Math.min(chartDragState.startX, chartDragState.currentX);
+    let endX = Math.max(chartDragState.startX, chartDragState.currentX);
+    rx = constrain(rx, padLeft, padLeft + plotW);
+    endX = constrain(endX, padLeft, padLeft + plotW);
+    let dragW = endX - rx;
+    
+    ctx.fillRect(rx, padTop, dragW, plotH);
+
+    // Tính năng hiển thị thời gian từ điểm đầu đến điểm chuột hiện tại
+    if (dragW > 2) {
+      let t1 = minT + ((rx - padLeft) / plotW) * (maxT - minT);
+      let t2 = minT + ((endX - padLeft) / plotW) * (maxT - minT);
+      
+      let dragText = `${t1.toFixed(1)}s ➝ ${t2.toFixed(1)}s`;
+      ctx.font = 'bold 10px Arial, sans-serif';
+      let txtW = ctx.measureText(dragText).width;
+      let cx = rx + dragW / 2;
+      
+      // Giữ cho chữ luôn nằm trọn trong đồ thị không bị tràn
+      if (cx - txtW / 2 < padLeft + 2) cx = padLeft + 2 + txtW / 2;
+      if (cx + txtW / 2 > padLeft + plotW - 2) cx = padLeft + plotW - 2 - txtW / 2;
+
+      ctx.fillStyle = 'rgba(20, 20, 25, 0.85)';
+      ctx.beginPath();
+      if (ctx.roundRect) {
+        ctx.roundRect(cx - txtW / 2 - 6, padTop + 4, txtW + 12, 16, 4);
+      } else {
+        ctx.rect(cx - txtW / 2 - 6, padTop + 4, txtW + 12, 16);
+      }
+      ctx.fill();
+
+      ctx.fillStyle = '#60a5fa'; // Chữ màu xanh lam nhạt nổi bật
+      ctx.textAlign = 'center';
+      ctx.textBaseline = 'middle';
+      ctx.fillText(dragText, cx, padTop + 12);
+    }
+  }
+
+  ctx.restore(); 
+
+  // Info box
+  if (markerTextData) {
+    let { x, s } = markerTextData;
+    let lineA = seriesALabel + ': ' + s[seriesAKey];
+    let lineB = seriesBLabel + ': ' + s[seriesBKey];
+    let lineT = 't = ' + s.t.toFixed(2) + ' s';
+
+    ctx.font = 'bold 10px Arial, sans-serif';
+    let textW = Math.max(
+      ctx.measureText(lineT).width,
+      ctx.measureText(lineA).width,
+      ctx.measureText(lineB).width
+    );
+    let boxW = textW + 14;
+    let boxH = 44;
+    let boxX = x + 8;
+    if (boxX + boxW > w - 2) boxX = x - boxW - 8;
+    boxX = constrain(boxX, 2, w - boxW - 2);
+    let boxY = padTop + 2;
+
+    ctx.fillStyle = 'rgba(10, 10, 14, 0.9)';
+    ctx.strokeStyle = 'rgba(255, 255, 255, 0.25)';
+    ctx.lineWidth = 1;
+    ctx.beginPath();
+    if (ctx.roundRect) ctx.roundRect(boxX, boxY, boxW, boxH, 5);
+    else ctx.rect(boxX, boxY, boxW, boxH);
+    ctx.fill();
+    ctx.stroke();
+
+    ctx.textAlign = 'left';
+    ctx.textBaseline = 'top';
+    ctx.fillStyle = 'rgba(255,255,255,0.85)';
+    ctx.font = 'bold 10px Arial, sans-serif';
+    ctx.fillText(lineT, boxX + 7, boxY + 4);
+    ctx.fillStyle = '#ffffff';
+    ctx.fillText(lineA, boxX + 7, boxY + 17);
+    ctx.fillStyle = '#ff8c1a';
+    ctx.fillText(lineB, boxX + 7, boxY + 30);
+  }
+}
+
+function drawConcChart() {
+  if (!showConcChart || !concChartCtx) return;
+  renderLineChart(concChartCtx, concChartCanvas, concHistory, 'n', 'ab', 'cd', 'A + B', 'C + D', concSelectedIndex, concChartZoom, concChartCanvas);
+}
+
+function drawCollisionChart() {
+  if (!showCollisionChart || !collisionChartCtx) return;
+  renderLineChart(collisionChartCtx, collisionChartCanvas, collisionHistory, 'va chạm/1s', 'ab', 'cd', 'A × B', 'C × D', collisionSelectedIndex, collisionChartZoom, collisionChartCanvas);
+}
+
 function transformVec4(m, v) {
   return [
     m[0] * v[0] + m[4] * v[1] + m[8]  * v[2] + m[12] * v[3],
@@ -159,8 +627,6 @@ function transformVec4(m, v) {
   ];
 }
 
-// Project a 3D world point to 2D pixel coordinates on the canvas,
-// using the camera/projection matrices captured at the start of this frame.
 function projectToScreen(pos) {
   if (!frameMV || !frameP) return null;
   let world = [pos.x, pos.y, pos.z, 1];
@@ -172,7 +638,7 @@ function projectToScreen(pos) {
   let ndcY = clip[1] / clip[3];
   let ndcZ = clip[2] / clip[3];
 
-  if (ndcZ < -1 || ndcZ > 1) return null; // outside near/far clip range
+  if (ndcZ < -1 || ndcZ > 1) return null; 
 
   let sx = (ndcX * 0.5 + 0.5) * width;
   let sy = (1 - (ndcY * 0.5 + 0.5)) * height;
@@ -184,11 +650,9 @@ function getCameraPosition() {
   if (cam && typeof cam.eyeX === 'number') {
     return createVector(cam.eyeX, cam.eyeY, cam.eyeZ);
   }
-  return createVector(0, 0, 800); // fallback, should not normally happen
+  return createVector(0, 0, 800); 
 }
 
-// Accurate on-screen radius: projects the actual silhouette edge of the
-// sphere as seen from the camera, rather than using a rough formula.
 function accurateScreenRadius(pos, radius, camPos) {
   let viewDir = p5.Vector.sub(pos, camPos);
   let dist3D = viewDir.mag();
@@ -207,11 +671,11 @@ function accurateScreenRadius(pos, radius, camPos) {
   return dist(c1.x, c1.y, c2.x, c2.y);
 }
 
-// ---------------- 3D spatial grid (world-space, for collisions) ----------------
+// ---------------- 3D spatial grid ----------------
 function buildSpatialGrid(cellSize) {
   let grid = new Map();
-  for (let idx = 0; idx < molecules.length; idx++) {
-    let p = molecules[idx].pos;
+  molecules.forEach((m, idx) => {
+    let p = m.pos;
     let ix = Math.floor(p.x / cellSize);
     let iy = Math.floor(p.y / cellSize);
     let iz = Math.floor(p.z / cellSize);
@@ -222,7 +686,7 @@ function buildSpatialGrid(cellSize) {
       grid.set(key, bucket);
     }
     bucket.push(idx);
-  }
+  });
   return grid;
 }
 
@@ -231,17 +695,17 @@ function getNeighborIndices(grid, cellSize, pos) {
   let iy = Math.floor(pos.y / cellSize);
   let iz = Math.floor(pos.z / cellSize);
   let result = [];
-  for (let dx = -1; dx <= 1; dx++) {
-    for (let dy = -1; dy <= 1; dy++) {
-      for (let dz = -1; dz <= 1; dz++) {
+  [-1, 0, 1].forEach(dx => {
+    [-1, 0, 1].forEach(dy => {
+      [-1, 0, 1].forEach(dz => {
         let key = (ix + dx) + ',' + (iy + dy) + ',' + (iz + dz);
         let bucket = grid.get(key);
         if (bucket) {
-          for (let k = 0; k < bucket.length; k++) result.push(bucket[k]);
+          bucket.forEach(k => result.push(k));
         }
-      }
-    }
-  }
+      });
+    });
+  });
   return result;
 }
 
@@ -250,14 +714,13 @@ function currentCellSize() {
   return Math.max(24, avgRadius * 6);
 }
 
-// ---------------- 2D screen-space grid (for label occlusion) ----------------
+// ---------------- 2D screen-space grid ----------------
 const SCREEN_CELL_SIZE = 80;
 
 function buildScreenGrid(info) {
   let grid = new Map();
-  for (let idx = 0; idx < info.length; idx++) {
-    let item = info[idx];
-    if (!item) continue;
+  info.forEach((item, idx) => {
+    if (!item) return;
     let ix = Math.floor(item.s.x / SCREEN_CELL_SIZE);
     let iy = Math.floor(item.s.y / SCREEN_CELL_SIZE);
     let key = ix + ',' + iy;
@@ -267,7 +730,7 @@ function buildScreenGrid(info) {
       grid.set(key, bucket);
     }
     bucket.push(idx);
-  }
+  });
   return grid;
 }
 
@@ -275,68 +738,78 @@ function getScreenNeighborIndices(grid, screenPos) {
   let ix = Math.floor(screenPos.x / SCREEN_CELL_SIZE);
   let iy = Math.floor(screenPos.y / SCREEN_CELL_SIZE);
   let result = [];
-  for (let dx = -1; dx <= 1; dx++) {
-    for (let dy = -1; dy <= 1; dy++) {
+  [-1, 0, 1].forEach(dx => {
+    [-1, 0, 1].forEach(dy => {
       let key = (ix + dx) + ',' + (iy + dy);
       let bucket = grid.get(key);
       if (bucket) {
-        for (let k = 0; k < bucket.length; k++) result.push(bucket[k]);
+        bucket.forEach(k => result.push(k));
       }
-    }
-  }
+    });
+  });
   return result;
 }
 
 function drawLabels() {
   labelCtx.clearRect(0, 0, labelCanvas.width, labelCanvas.height);
-  labelCtx.font = 'bold 14px Arial, sans-serif';
+  
+  // TỐI ƯU HIỆU SUẤT KHỦNG KHIẾP: Set font 1 lần duy nhất ở ngoài cùng
+  labelCtx.font = 'bold 14px Arial, sans-serif'; 
   labelCtx.textAlign = 'center';
   labelCtx.textBaseline = 'middle';
 
   let camPos = frameCamPos;
-
   let info = new Array(molecules.length).fill(null);
-  for (let idx = 0; idx < molecules.length; idx++) {
-    let m = molecules[idx];
+  
+  molecules.forEach((m, idx) => {
     let s = projectToScreen(m.pos);
-    if (!s) continue;
+    if (!s) return;
     let camDist = p5.Vector.dist(m.pos, camPos);
     let screenR = accurateScreenRadius(m.pos, m.radius, camPos);
     info[idx] = { m, s, camDist, screenR };
-  }
+  });
 
   let screenGrid = buildScreenGrid(info);
 
-  for (let i = 0; i < molecules.length; i++) {
-    let cur = info[i];
-    if (!cur) continue;
+  info.forEach((cur, i) => {
+    if (!cur) return;
     let occluded = false;
 
     let neighbors = getScreenNeighborIndices(screenGrid, cur.s);
-    for (let k = 0; k < neighbors.length; k++) {
-      let j = neighbors[k];
-      if (j === i) continue;
+    // Sử dụng .some() tương đương với break trong for loop
+    neighbors.some(j => {
+      if (j === i) return false;
       let other = info[j];
-      if (!other) continue;
-      if (other.camDist >= cur.camDist - 0.5) continue;
-      if (other.screenR <= 0) continue;
+      if (!other) return false;
+      if (other.camDist >= cur.camDist - 0.5) return false;
+      if (other.screenR <= 0) return false;
 
       let d = dist(cur.s.x, cur.s.y, other.s.x, other.s.y);
       if (d < other.screenR * 0.85) {
         occluded = true;
-        break;
+        return true; 
       }
-    }
+      return false;
+    });
 
     if (!occluded) {
+      // Dùng Scale đồ họa Vector để vẽ nhãn thay vì thay đổi cỡ font liên tục
+      let scale = Math.max(0.4, cur.screenR / 13);
+      
+      labelCtx.save();
+      labelCtx.translate(cur.s.x, cur.s.y);
+      labelCtx.scale(scale, scale); 
+      
       labelCtx.fillStyle = cur.m.labelColorHex;
-      labelCtx.fillText(cur.m.type, cur.s.x, cur.s.y);
+      labelCtx.fillText(cur.m.type, 0, 0);
+      
+      labelCtx.restore();
     }
-  }
+  });
 }
 
 function initSoundPool() {
-  for (let i = 0; i < OSC_POOL_SIZE; i++) {
+  Array.from({ length: OSC_POOL_SIZE }).forEach(() => {
     let osc = new p5.Oscillator('sine');
     osc.amp(0);
     osc.start();
@@ -344,7 +817,7 @@ function initSoundPool() {
     env.setADSR(0.001, 0.08, 0.0, 0.05);
     env.setRange(1, 0);
     oscPool.push({ osc, env });
-  }
+  });
 }
 
 function constrainCount(v, inputEl) {
@@ -361,46 +834,23 @@ function constrainCount(v, inputEl) {
 function syncCount(type, target) {
   let current = molecules.filter(m => m.type === type);
   let diff = target - current.length;
+  
   if (diff > 0) {
-    for (let i = 0; i < diff; i++) {
+    Array.from({ length: diff }).forEach(() => {
       let radius = BASE_RADIUS[type] * radiusScale;
-      let pos = findNonOverlappingPosition(radius);
+      let margin = HALF - radius;
+      let pos = createVector(random(-margin, margin), random(-margin, margin), random(-margin, margin));
       molecules.push(new Molecule(type, pos));
-    }
+    });
   } else if (diff < 0) {
-    for (let i = 0; i < -diff; i++) {
+    Array.from({ length: -diff }).forEach(() => {
       let idx = molecules.findIndex(m => m.type === type);
       if (idx !== -1) molecules.splice(idx, 1);
-    }
+    });
   }
   updateRadiusScale();
   updateCountsPanel();
-}
-
-function findNonOverlappingPosition(radius) {
-  const maxAttempts = 40;
-  let margin = HALF - radius;
-  let candidate = null;
-
-  for (let attempt = 0; attempt < maxAttempts; attempt++) {
-    candidate = createVector(random(-margin, margin), random(-margin, margin), random(-margin, margin));
-    let collides = false;
-    for (let i = 0; i < molecules.length; i++) {
-      let other = molecules[i];
-      let minD = radius + other.radius;
-      if (p5.Vector.dist(candidate, other.pos) < minD) {
-        collides = true;
-        break;
-      }
-    }
-    if (!collides) return candidate;
-  }
-  return candidate;
-}
-
-function randomPointInBox() {
-  let m = HALF - 20;
-  return createVector(random(-m, m), random(-m, m), random(-m, m));
+  recordConcSample();
 }
 
 function updateRadiusScale() {
@@ -408,9 +858,9 @@ function updateRadiusScale() {
   let scale = map(total, 40, 800, 1.0, 0.3, true);
   radiusScale = constrain(scale, 0.3, 1.0);
 
-  for (let m of molecules) {
+  molecules.forEach(m => {
     m.radius = BASE_RADIUS[m.type] * radiusScale;
-  }
+  });
 }
 
 function togglePlay() {
@@ -456,12 +906,33 @@ function resetAll() {
   radiusScale = 1;
   setReactionMode('reversible');
   labelCtx.clearRect(0, 0, labelCanvas.width, labelCanvas.height);
+
+  simTime = 0;
+  chartSampleAccumulator = 0;
+  concHistory = [];
+  concSelectedIndex = -1;
+
+  collisionHistory = [];
+  collisionWindowAB = 0;
+  collisionWindowCD = 0;
+  collisionWindowStart = 0;
+  collisionSelectedIndex = -1;
+
+  concChartZoom = null;
+  collisionChartZoom = null;
+  chartDragState.canvas = null;
+
   updateCountsPanel();
+  recordConcSample();
+  recordCollisionZeroSample();
+
+  if (showConcChart) drawConcChart();
+  if (showCollisionChart) drawCollisionChart();
 }
 
 function updateCountsPanel() {
   let counts = { A: 0, B: 0, C: 0, D: 0 };
-  for (let m of molecules) counts[m.type]++;
+  molecules.forEach(m => { counts[m.type]++; });
   if (cntAEl) cntAEl.textContent = counts.A;
   if (cntBEl) cntBEl.textContent = counts.B;
   if (cntCEl) cntCEl.textContent = counts.C;
@@ -503,23 +974,21 @@ class Molecule {
   }
 }
 
-// ---------------- Flash effect (single clean glow: fast pop -> fade -> gone) ----------------
+// ---------------- Flash effect ----------------
 class Flash {
   constructor(pos, colorArr) {
     this.pos = pos.copy();
     this.color = colorArr;
     this.age = 0;
-    this.maxAge = 10; // very fast flash (~0.16s at 60fps)
+    this.maxAge = 10;
   }
   update() {
     this.age++;
     return this.age < this.maxAge;
   }
   display() {
-    let t = this.age / this.maxAge; // 0 -> 1
-
+    let t = this.age / this.maxAge; 
     let r = lerp(8, 55, easeOutCubic(t)) * Math.max(radiusScale, 0.4);
-
     let alpha = 255 * (1 - easeInQuad(t));
     if (alpha <= 1) return;
 
@@ -555,15 +1024,16 @@ function playCollisionSound(freq) {
 }
 
 // ---------------- Reactions & collisions ----------------
-// Whether a specific ordered pair of types should react, given the
-// currently selected reaction mode:
-//  - 'reversible': A+B -> C+D  AND  C+D -> A+B  (both directions allowed)
-//  - 'oneway':     A+B -> C+D only; C+D colliding just bounces (no reaction)
+function isABPair(t1, t2) {
+  return (t1 === 'A' && t2 === 'B') || (t1 === 'B' && t2 === 'A');
+}
+function isCDPair(t1, t2) {
+  return (t1 === 'C' && t2 === 'D') || (t1 === 'D' && t2 === 'C');
+}
+
 function shouldReact(t1, t2) {
-  let isAB = (t1 === 'A' && t2 === 'B') || (t1 === 'B' && t2 === 'A');
-  let isCD = (t1 === 'C' && t2 === 'D') || (t1 === 'D' && t2 === 'C');
-  if (isAB) return true;
-  if (isCD) return reactionMode === 'reversible';
+  if (isABPair(t1, t2)) return true;
+  if (isCDPair(t1, t2)) return reactionMode === 'reversible';
   return false;
 }
 
@@ -580,22 +1050,23 @@ function handleCollisions() {
   let newMolecules = [];
   let countChanged = false;
 
-  for (let i = 0; i < molecules.length; i++) {
-    if (toRemove.has(i)) continue;
-    let m1 = molecules[i];
+  molecules.forEach((m1, i) => {
+    if (toRemove.has(i)) return;
     let neighbors = getNeighborIndices(frameGrid, frameCellSize, m1.pos);
 
-    for (let k = 0; k < neighbors.length; k++) {
-      let j = neighbors[k];
-      if (j <= i) continue; // ensures each pair is processed exactly once
-      if (toRemove.has(j)) continue;
+    neighbors.some(j => {
+      if (j <= i) return false; 
+      if (toRemove.has(j)) return false;
 
       let m2 = molecules[j];
       let d = p5.Vector.dist(m1.pos, m2.pos);
       let minD = m1.radius + m2.radius;
+      
       if (d < minD) {
-        let mid = p5.Vector.lerp(m1.pos, m2.pos, 0.5);
+        if (isABPair(m1.type, m2.type)) collisionWindowAB++;
+        else if (isCDPair(m1.type, m2.type)) collisionWindowCD++;
 
+        let mid = p5.Vector.lerp(m1.pos, m2.pos, 0.5);
         let normal = p5.Vector.sub(m2.pos, m1.pos);
         if (normal.magSq() < 0.0001) normal = p5.Vector.random3D();
         normal.normalize();
@@ -607,11 +1078,11 @@ function handleCollisions() {
           let newType1, newType2, flashColor, freq;
           if (m1.type === 'A' || m1.type === 'B') {
             newType1 = 'C'; newType2 = 'D';
-            flashColor = [255, 45, 45]; // red glow for A+B collision
+            flashColor = [255, 45, 45]; 
             freq = 220;
           } else {
             newType1 = 'A'; newType2 = 'B';
-            flashColor = [255, 225, 30]; // yellow glow for C+D collision
+            flashColor = [255, 225, 30]; 
             freq = 330;
           }
 
@@ -631,10 +1102,8 @@ function handleCollisions() {
           flashes.push(new Flash(mid, flashColor));
           playCollisionSound(freq);
           countChanged = true;
-          break; // m1 is consumed, stop checking further neighbors for it
+          return true; 
         } else {
-          // Not eligible to react (either different types that don't pair,
-          // or C+D blocked under one-way mode) — just an elastic-like bounce.
           let overlap = minD - d;
           let push1 = p5.Vector.mult(normal, -overlap / 2);
           let push2 = p5.Vector.mult(normal, overlap / 2);
@@ -647,8 +1116,9 @@ function handleCollisions() {
           m2.vel.sub(v2n).add(v1n);
         }
       }
-    }
-  }
+      return false;
+    });
+  });
 
   if (toRemove.size > 0) {
     molecules = molecules.filter((m, idx) => !toRemove.has(idx));
@@ -663,7 +1133,9 @@ function handleCollisions() {
 function draw() {
   background(0, 0, 2);
 
-  orbitControl(1, 1, 0.15);
+  if (!mouseOverUI) {
+    orbitControl(1, 1, 0.15);
+  }
 
   frameMV = _renderer.uMVMatrix.copy().mat4;
   frameP = _renderer.uPMatrix.copy().mat4;
@@ -675,7 +1147,6 @@ function draw() {
   ambientLight(140, 140, 140);
   pointLight(180, 180, 180, 150, -220, 260);
 
-  // Bounding transparent box (wireframe, all edges visible)
   push();
   noFill();
   stroke(120, 190, 255, 160);
@@ -686,27 +1157,52 @@ function draw() {
   let speedFactor = map(speedLevel, 0, 10, 0, 4.2);
 
   if (isPlaying) {
-    for (let m of molecules) m.update(speedFactor);
+    molecules.forEach(m => m.update(speedFactor));
     handleCollisions();
     frameGrid = buildSpatialGrid(frameCellSize);
+
+    let dt = deltaTime / 1000;
+    simTime += dt;
+
+    chartSampleAccumulator += dt;
+    if (chartSampleAccumulator >= CHART_SAMPLE_INTERVAL) {
+      chartSampleAccumulator -= CHART_SAMPLE_INTERVAL;
+      recordConcSample();
+    }
+
+    if (simTime - collisionWindowStart >= COLLISION_WINDOW) {
+      let windowsPassed = Math.floor((simTime - collisionWindowStart) / COLLISION_WINDOW);
+      if (windowsPassed > 5) {
+        collisionWindowStart = simTime;
+      } else {
+        Array.from({ length: windowsPassed }).forEach(() => {
+          collisionWindowStart += COLLISION_WINDOW;
+          flushCollisionWindow(collisionWindowStart);
+        });
+      }
+    }
   }
 
-  for (let m of molecules) m.display();
+  molecules.forEach(m => m.display());
 
-  for (let i = flashes.length - 1; i >= 0; i--) {
-    let alive = flashes[i].update();
-    flashes[i].display();
-    if (!alive) flashes.splice(i, 1);
-  }
+  flashes = flashes.filter(f => {
+    let alive = f.update();
+    if (alive) f.display();
+    return alive;
+  });
 
   if (showLabels) {
     drawLabels();
   } else {
     labelCtx.clearRect(0, 0, labelCanvas.width, labelCanvas.height);
   }
+
+  if (showConcChart) drawConcChart();
+  if (showCollisionChart) drawCollisionChart();
 }
 
 function windowResized() {
   resizeCanvas(canvasHolder.offsetWidth, canvasHolder.offsetHeight);
   resizeLabelCanvas();
+  resizeChartCanvases();
 }

@@ -164,6 +164,15 @@ input[type="range"]::-moz-range-thumb {
   background: #2563eb;
 }
 
+.btn-chart {
+  width: 100%;
+  background: #3a3a45;
+}
+
+.btn-chart.on {
+  background: #d97706;
+}
+
 .btn-mode {
   background: #2a2a32;
   font-size: 12.5px;
@@ -227,11 +236,35 @@ input[type="range"]::-moz-range-thumb {
   z-index: 3;
 }
 
-#countsPanel {
+/* Chart panels: top-left of canvas, stacked vertically in a scientific,
+   consistent order (concentration chart above collision chart). */
+#leftPanels {
+  position: absolute;
+  top: 14px;
+  left: 14px;
+  z-index: 4;
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  align-items: flex-start;
+  pointer-events: none;
+}
+
+/* Counts panel: top-right of canvas (not a graph, kept separate on the
+   opposite side so the two data groups never overlap). */
+#rightPanels {
   position: absolute;
   top: 14px;
   right: 14px;
   z-index: 4;
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  align-items: flex-end;
+  pointer-events: none;
+}
+
+#countsPanel {
   background: rgba(18, 18, 22, 0.72);
   border: 1px solid rgba(255, 255, 255, 0.12);
   border-radius: 10px;
@@ -240,8 +273,10 @@ input[type="range"]::-moz-range-thumb {
   font-size: 13px;
   min-width: 110px;
   backdrop-filter: blur(4px);
-  pointer-events: none;
   user-select: none;
+  /* Must capture pointer events so hovering it blocks canvas orbit/zoom,
+     even though it displays read-only data. */
+  pointer-events: auto;
 }
 
 .counts-title {
@@ -265,6 +300,61 @@ input[type="range"]::-moz-range-thumb {
   border-radius: 50%;
   display: inline-block;
   flex-shrink: 0;
+}
+
+.chart-panel {
+  background: rgba(18, 18, 22, 0.72);
+  border: 1px solid rgba(255, 255, 255, 0.12);
+  border-radius: 10px;
+  padding: 10px 12px;
+  color: #eaeaea;
+  width: 260px;
+  backdrop-filter: blur(4px);
+  user-select: none;
+  /* Charts must receive click events to select a data point, and hovering
+     them must also block canvas orbit/zoom underneath. */
+  pointer-events: auto;
+}
+
+.chart-panel.hidden {
+  display: none;
+}
+
+.chart-title {
+  font-size: 11px;
+  letter-spacing: 1px;
+  color: #9aa0aa;
+  margin-bottom: 6px;
+  font-weight: bold;
+}
+
+.chart-legend {
+  display: flex;
+  gap: 12px;
+  font-size: 11px;
+  color: #d0d0d8;
+  margin-bottom: 6px;
+}
+
+.chart-legend span {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+}
+
+.chart-dot {
+  width: 9px;
+  height: 9px;
+  border-radius: 50%;
+  display: inline-block;
+}
+
+.chart-panel canvas {
+  width: 100%;
+  height: 130px;
+  display: block;
+  border-radius: 6px;
+  cursor: crosshair;
 }
 
 /* ===== Mobile / touch optimization ===== */
@@ -311,11 +401,36 @@ input[type="range"]::-moz-range-thumb {
     padding: 12px;
   }
 
-  #countsPanel {
+  #leftPanels {
+    top: 8px;
+    left: 8px;
+    gap: 6px;
+  }
+
+  #rightPanels {
     top: 8px;
     right: 8px;
+    gap: 6px;
+  }
+
+  #countsPanel {
     padding: 8px 10px;
     font-size: 12px;
     min-width: 90px;
+  }
+
+  .chart-panel {
+    width: 46vw;
+    min-width: 150px;
+    padding: 8px 8px;
+  }
+
+  .chart-title,
+  .chart-legend {
+    font-size: 10px;
+  }
+
+  .chart-panel canvas {
+    height: 90px;
   }
 }
