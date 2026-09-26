@@ -45,7 +45,7 @@ let frameCellSize = 24;
 
 // UI refs
 let countAInput, countBInput, speedSlider, volumeSlider, playBtn, resetBtn, labelBtn;
-let concChartBtn, collisionChartBtn;
+let concChartBtn, rateChartBtn;
 let modeReversibleBtn, modeOneWayBtn;
 let speedValLabel, volValLabel;
 let cntAEl, cntBEl, cntCEl, cntDEl;
@@ -71,37 +71,39 @@ const LABEL_COLORS = {
   C: '#ffffff', // white on magenta
   D: '#2b1400'  // near-black on orange
 };
-// Base (unscaled) radii — actual rendered radius = base * radiusScale
-const BASE_RADIUS = { A: 13, B: 13, C: 15, D: 15 };
+// ĐÃ ĐỒNG NHẤT BÁN KÍNH: A, B, C, D đều bằng 14
+const BASE_RADIUS = { A: 14, B: 14, C: 14, D: 14 };
 
-// ---------------- Charts (both driven by a shared simulation clock) ----------------
-let simTime = 0; // seconds of simulation time (only advances while playing)
-let chartSampleAccumulator = 0;
+// ---------------- Charts ----------------
 const CHART_SAMPLE_INTERVAL = 0.1; // seconds between recorded concentration samples
 const CHART_MAX_SAMPLES = 6000; // ~10 minutes of history at the interval above
 
-// Concentration chart: total A+B vs total C+D over time
+// HỆ THỐNG THỜI GIAN ĐỘC LẬP (Independent Timers)
+// 1. Dành cho đồ thị Nồng độ (Chạy ngay từ đầu)
+let concTime = 0; 
+let concSampleAccumulator = 0;
 let showConcChart = false;
 let concChartCanvas, concChartCtx;
 let concHistory = []; // { t, ab, cd }
-let concSelectedIndex = -1; // index into concHistory currently selected by a click
+let concSelectedIndex = -1; 
 
-// Collision chart: number of A-B and C-D collisions that occurred WITHIN
-// each 1-second window (not a running/cumulative total). Every full
-// second of simulation time, the counters below are flushed into a new
-// history sample and reset back to zero for the next second.
-let showCollisionChart = false;
-let collisionChartCanvas, collisionChartCtx;
-let collisionHistory = []; // { t, ab, cd }  -- ab/cd = collisions THAT SECOND
-const COLLISION_WINDOW = 1.0; // seconds per bucket
-let collisionWindowAB = 0;
-let collisionWindowCD = 0;
-let collisionWindowStart = 0; // simTime at which the current window began
-let collisionSelectedIndex = -1; // index into collisionHistory currently selected by a click
+// 2. Dành cho đồ thị Tốc độ (Chỉ đếm từ lúc có va chạm đầu tiên)
+let rateTime = 0; 
+let rateSampleAccumulator = 0;
+let showRateChart = false;
+let rateChartCanvas, rateChartCtx;
+let rateHistory = []; // { t, fwd, rev } 
+let fwdCount = 0; 
+let revCount = 0; 
+let fwdRateEMA = 0; 
+let revRateEMA = 0; 
+let isWaitingForFirstReaction = true; 
+const RATE_EMA_ALPHA = 0.15; 
+let rateSelectedIndex = -1; 
 
 // State cho việc Drag to Zoom đồ thị
 let concChartZoom = null;
-let collisionChartZoom = null;
+let rateChartZoom = null;
 let chartDragState = { canvas: null, startX: 0, currentX: 0 };
 
 function setup() {
@@ -125,7 +127,7 @@ function setup() {
   resetBtn = select('#resetBtn');
   labelBtn = select('#labelBtn');
   concChartBtn = select('#concChartBtn');
-  collisionChartBtn = select('#collisionChartBtn');
+  rateChartBtn = select('#rateChartBtn');
   modeReversibleBtn = select('#modeReversibleBtn');
   modeOneWayBtn = select('#modeOneWayBtn');
   speedValLabel = select('#speedVal');
@@ -153,14 +155,16 @@ function setup() {
   resetBtn.mousePressed(resetAll);
   labelBtn.mousePressed(toggleLabels);
   concChartBtn.mousePressed(toggleConcChart);
-  collisionChartBtn.mousePressed(toggleCollisionChart);
+  rateChartBtn.mousePressed(toggleRateChart);
   modeReversibleBtn.mousePressed(() => setReactionMode('reversible'));
   modeOneWayBtn.mousePressed(() => setReactionMode('oneway'));
 
   initSoundPool();
   updateCountsPanel();
-  recordConcSample();   // seed with an initial point at t = 0
-  recordCollisionZeroSample(); // seed with an initial (0,0) point at t = 0
+  
+  // Mồi điểm xuất phát t=0 cho nồng độ (nơi C và D bằng 0)
+  concTime = 0;
+  recordConcSample();   
 }
 
 // Blocks canvas orbit/zoom while the pointer hovers the sidebar or any display panel
@@ -169,10 +173,9 @@ function setupUIHoverGuards() {
     document.getElementById('sidebar'),
     document.getElementById('countsPanel'),
     document.getElementById('concChartPanel'),
-    document.getElementById('collisionChartPanel')
+    document.getElementById('rateChartPanel')
   ];
   
-  // Dùng forEach chuẩn Functional
   uiElements.forEach(el => {
     if (el) {
       el.addEventListener('pointerenter', () => { mouseOverUI = true; });
@@ -217,8 +220,8 @@ function setupChartCanvases() {
   concChartCanvas = document.getElementById('concChartCanvas');
   concChartCtx = concChartCanvas.getContext('2d');
 
-  collisionChartCanvas = document.getElementById('collisionChartCanvas');
-  collisionChartCtx = collisionChartCanvas.getContext('2d');
+  rateChartCanvas = document.getElementById('rateChartCanvas');
+  rateChartCtx = rateChartCanvas.getContext('2d');
 
   resizeChartCanvases();
 
@@ -230,12 +233,12 @@ function setupChartCanvases() {
     () => concChartZoom
   );
 
-  // Bắt sự kiện Quét chọn để Zoom và Klick cho biểu đồ Va chạm
-  setupZoomableChart(collisionChartCanvas, collisionHistory, 
-    (idx) => { collisionSelectedIndex = idx; drawCollisionChart(); },
-    () => drawCollisionChart(),
-    (zoom) => { collisionChartZoom = zoom; },
-    () => collisionChartZoom
+  // Bắt sự kiện Quét chọn để Zoom và Klick cho biểu đồ Tốc độ
+  setupZoomableChart(rateChartCanvas, rateHistory, 
+    (idx) => { rateSelectedIndex = idx; drawRateChart(); },
+    () => drawRateChart(),
+    (zoom) => { rateChartZoom = zoom; },
+    () => rateChartZoom
   );
 }
 
@@ -315,7 +318,7 @@ function getChartTimeForX(x, canvasEl, history, zoom) {
 
 function resizeChartCanvases() {
   resizeOneChartCanvas(concChartCanvas, concChartCtx);
-  resizeOneChartCanvas(collisionChartCanvas, collisionChartCtx);
+  resizeOneChartCanvas(rateChartCanvas, rateChartCtx);
 }
 
 function resizeOneChartCanvas(canvasEl, ctx) {
@@ -344,22 +347,23 @@ function toggleConcChart() {
   }
 }
 
-function toggleCollisionChart() {
-  showCollisionChart = !showCollisionChart;
-  let panel = document.getElementById('collisionChartPanel');
-  if (showCollisionChart) {
-    collisionChartBtn.html('💥 VA CHẠM: BẬT');
-    collisionChartBtn.addClass('on');
+function toggleRateChart() {
+  showRateChart = !showRateChart;
+  let panel = document.getElementById('rateChartPanel');
+  if (showRateChart) {
+    rateChartBtn.html('⚡ TỐC ĐỘ: BẬT');
+    rateChartBtn.addClass('on');
     panel.classList.remove('hidden');
-    resizeOneChartCanvas(collisionChartCanvas, collisionChartCtx);
-    drawCollisionChart();
+    resizeOneChartCanvas(rateChartCanvas, rateChartCtx);
+    drawRateChart();
   } else {
-    collisionChartBtn.html('💥 VA CHẠM: TẮT');
-    collisionChartBtn.removeClass('on');
+    rateChartBtn.html('⚡ TỐC ĐỘ: TẮT');
+    rateChartBtn.removeClass('on');
     panel.classList.add('hidden');
   }
 }
 
+// Sử dụng concTime riêng biệt
 function recordConcSample() {
   let ab = 0, cd = 0;
   molecules.forEach(m => {
@@ -367,25 +371,41 @@ function recordConcSample() {
     else cd++;
   });
   
-  concHistory.push({ t: simTime, ab, cd });
-  if (concHistory.length > CHART_MAX_SAMPLES) {
-    concHistory.splice(0, concHistory.length - CHART_MAX_SAMPLES);
-    if (concSelectedIndex >= 0) concSelectedIndex = Math.max(0, concSelectedIndex - 1);
+  // Tránh ghi đè trùng timestamp nếu pause
+  if (concHistory.length > 0 && concHistory[concHistory.length - 1].t === concTime) {
+    concHistory[concHistory.length - 1] = { t: concTime, ab, cd };
+  } else {
+    concHistory.push({ t: concTime, ab, cd });
+    if (concHistory.length > CHART_MAX_SAMPLES) {
+      concHistory.splice(0, concHistory.length - CHART_MAX_SAMPLES);
+      if (concSelectedIndex >= 0) concSelectedIndex = Math.max(0, concSelectedIndex - 1);
+    }
   }
 }
 
-function recordCollisionZeroSample() {
-  collisionHistory.push({ t: 0, ab: 0, cd: 0 });
-}
+// Sử dụng rateTime riêng biệt
+function recordRateSample() {
+  let instFwd = fwdCount / CHART_SAMPLE_INTERVAL;
+  let instRev = revCount / CHART_SAMPLE_INTERVAL;
 
-function flushCollisionWindow(windowEndTime) {
-  collisionHistory.push({ t: windowEndTime, ab: collisionWindowAB, cd: collisionWindowCD });
-  if (collisionHistory.length > CHART_MAX_SAMPLES) {
-    collisionHistory.splice(0, collisionHistory.length - CHART_MAX_SAMPLES);
-    if (collisionSelectedIndex >= 0) collisionSelectedIndex = Math.max(0, collisionSelectedIndex - 1);
+  fwdRateEMA = RATE_EMA_ALPHA * instFwd + (1 - RATE_EMA_ALPHA) * fwdRateEMA;
+  revRateEMA = RATE_EMA_ALPHA * instRev + (1 - RATE_EMA_ALPHA) * revRateEMA;
+
+  let f = Math.round(fwdRateEMA * 10) / 10;
+  let r = Math.round(revRateEMA * 10) / 10;
+  
+  if (rateHistory.length > 0 && rateHistory[rateHistory.length - 1].t === rateTime) {
+    rateHistory[rateHistory.length - 1] = { t: rateTime, fwd: f, rev: r };
+  } else {
+    rateHistory.push({ t: rateTime, fwd: f, rev: r });
+    if (rateHistory.length > CHART_MAX_SAMPLES) {
+      rateHistory.splice(0, rateHistory.length - CHART_MAX_SAMPLES);
+      if (rateSelectedIndex >= 0) rateSelectedIndex = Math.max(0, rateSelectedIndex - 1);
+    }
   }
-  collisionWindowAB = 0;
-  collisionWindowCD = 0;
+
+  fwdCount = 0;
+  revCount = 0;
 }
 
 // Rendering đồ thị tích hợp zoom và selection box
@@ -404,12 +424,22 @@ function renderLineChart(ctx, canvasEl, history, yLabel, seriesAKey, seriesBKey,
   const plotW = Math.max(1, w - padLeft - padRight);
   const plotH = Math.max(1, h - padTop - padBottom);
 
-  if (history.length < 2) {
+  let isRateChart = (yLabel === 'v (p.ứ/s)');
+
+  // Hiển thị thông báo khi chờ phản ứng đầu tiên cho Đồ thị Tốc độ
+  if (isRateChart && history.length < 2) {
     ctx.fillStyle = 'rgba(255,255,255,0.4)';
     ctx.font = '11px Arial, sans-serif';
     ctx.textAlign = 'center';
-    ctx.fillText('Đang chờ dữ liệu...', w / 2, h / 2);
+    ctx.textBaseline = 'middle';
+    ctx.fillText('Đang chờ phản ứng đầu tiên...', padLeft + plotW / 2, padTop + plotH / 2);
     return;
+  }
+  
+  if (!isRateChart && history.length < 2) {
+    // Đồ thị nồng độ thì hiển thị bình thường dù có 1 điểm (có thể do đang pause ban đầu)
+    // Nhưng để vẽ được line thì cần ít nhất 2 điểm. Nếu chỉ 1 điểm thì vẽ chấm
+    if (history.length === 0) return;
   }
 
   let maxT = history[history.length - 1].t;
@@ -422,12 +452,30 @@ function renderLineChart(ctx, canvasEl, history, yLabel, seriesAKey, seriesBKey,
   if (maxT - minT < 1) maxT = minT + 1;
 
   let maxN = 1;
-  history.forEach(s => {
-    if (s.t >= minT && s.t <= maxT) {
-      maxN = Math.max(maxN, s[seriesAKey], s[seriesBKey]);
+
+  if (isRateChart) {
+    // Với đồ thị Tốc độ: Lấy Percentile thứ 95 để trục Y không bị kéo giãn quá mức bởi cú bùng nổ phản ứng ban đầu
+    let vals = [];
+    history.forEach(s => {
+      if (s.t >= minT && s.t <= maxT) {
+        vals.push(s[seriesAKey], s[seriesBKey]);
+      }
+    });
+    if (vals.length > 0) {
+      vals.sort((a, b) => a - b);
+      let p95 = vals[Math.floor(vals.length * 0.95)];
+      maxN = Math.ceil(p95 * 1.5) || 1; 
     }
-  });
-  maxN = Math.ceil(maxN * 1.15) || 1;
+    if (maxN < 10) maxN = 10;
+  } else {
+    // Đồ thị Nồng độ: Lấy max tuyệt đối bình thường
+    history.forEach(s => {
+      if (s.t >= minT && s.t <= maxT) {
+        maxN = Math.max(maxN, s[seriesAKey], s[seriesBKey]);
+      }
+    });
+    maxN = Math.ceil(maxN * 1.15) || 1;
+  }
 
   function xFor(t) { return padLeft + ((t - minT) / (maxT - minT)) * plotW; }
   function yFor(n) { return padTop + plotH - (n / maxN) * plotH; }
@@ -464,7 +512,7 @@ function renderLineChart(ctx, canvasEl, history, yLabel, seriesAKey, seriesBKey,
   ctx.textAlign = 'center';
   ctx.fillText('t (s)', padLeft + plotW / 2, padTop + plotH + 4);
 
-  // Clipping để Chart line không tràn ra ngoài ranh giới khi Zoom
+  // Clipping để Chart line không tràn ra ngoài ranh giới khi Zoom hoặc khi bị cắt mốc (Percentile)
   ctx.save();
   ctx.beginPath();
   ctx.rect(padLeft, padTop, plotW, plotH);
@@ -481,6 +529,9 @@ function renderLineChart(ctx, canvasEl, history, yLabel, seriesAKey, seriesBKey,
     if (firstA) { ctx.moveTo(x, y); firstA = false; }
     else ctx.lineTo(x, y);
   });
+  if (history.length === 1) {
+    ctx.arc(xFor(history[0].t), yFor(history[0][seriesAKey]), 2, 0, Math.PI*2);
+  }
   ctx.stroke();
 
   // Series B (orange)
@@ -494,6 +545,9 @@ function renderLineChart(ctx, canvasEl, history, yLabel, seriesAKey, seriesBKey,
     if (firstB) { ctx.moveTo(x, y); firstB = false; }
     else ctx.lineTo(x, y);
   });
+  if (history.length === 1) {
+    ctx.arc(xFor(history[0].t), yFor(history[0][seriesBKey]), 2, 0, Math.PI*2);
+  }
   ctx.stroke();
 
   // Selected sample: dashed vertical marker + scientific readout
@@ -515,10 +569,10 @@ function renderLineChart(ctx, canvasEl, history, yLabel, seriesAKey, seriesBKey,
 
       let yA = yFor(s[seriesAKey]);
       let yB = yFor(s[seriesBKey]);
-      ctx.fillStyle = '#ffffff';
-      ctx.beginPath(); ctx.arc(x, yA, 3, 0, Math.PI * 2); ctx.fill();
-      ctx.fillStyle = '#ff8c1a';
-      ctx.beginPath(); ctx.arc(x, yB, 3, 0, Math.PI * 2); ctx.fill();
+      
+      // Chống vẽ điểm lọt ra ngoài bounding box
+      if (yA >= padTop) { ctx.fillStyle = '#ffffff'; ctx.beginPath(); ctx.arc(x, yA, 3, 0, Math.PI * 2); ctx.fill(); }
+      if (yB >= padTop) { ctx.fillStyle = '#ff8c1a'; ctx.beginPath(); ctx.arc(x, yB, 3, 0, Math.PI * 2); ctx.fill(); }
       
       markerTextData = { x, s };
     }
@@ -535,7 +589,6 @@ function renderLineChart(ctx, canvasEl, history, yLabel, seriesAKey, seriesBKey,
     
     ctx.fillRect(rx, padTop, dragW, plotH);
 
-    // Tính năng hiển thị thời gian từ điểm đầu đến điểm chuột hiện tại
     if (dragW > 2) {
       let t1 = minT + ((rx - padLeft) / plotW) * (maxT - minT);
       let t2 = minT + ((endX - padLeft) / plotW) * (maxT - minT);
@@ -545,7 +598,6 @@ function renderLineChart(ctx, canvasEl, history, yLabel, seriesAKey, seriesBKey,
       let txtW = ctx.measureText(dragText).width;
       let cx = rx + dragW / 2;
       
-      // Giữ cho chữ luôn nằm trọn trong đồ thị không bị tràn
       if (cx - txtW / 2 < padLeft + 2) cx = padLeft + 2 + txtW / 2;
       if (cx + txtW / 2 > padLeft + plotW - 2) cx = padLeft + plotW - 2 - txtW / 2;
 
@@ -558,7 +610,7 @@ function renderLineChart(ctx, canvasEl, history, yLabel, seriesAKey, seriesBKey,
       }
       ctx.fill();
 
-      ctx.fillStyle = '#60a5fa'; // Chữ màu xanh lam nhạt nổi bật
+      ctx.fillStyle = '#60a5fa'; 
       ctx.textAlign = 'center';
       ctx.textBaseline = 'middle';
       ctx.fillText(dragText, cx, padTop + 12);
@@ -613,9 +665,9 @@ function drawConcChart() {
   renderLineChart(concChartCtx, concChartCanvas, concHistory, 'n', 'ab', 'cd', 'A + B', 'C + D', concSelectedIndex, concChartZoom, concChartCanvas);
 }
 
-function drawCollisionChart() {
-  if (!showCollisionChart || !collisionChartCtx) return;
-  renderLineChart(collisionChartCtx, collisionChartCanvas, collisionHistory, 'va chạm/1s', 'ab', 'cd', 'A × B', 'C × D', collisionSelectedIndex, collisionChartZoom, collisionChartCanvas);
+function drawRateChart() {
+  if (!showRateChart || !rateChartCtx) return;
+  renderLineChart(rateChartCtx, rateChartCanvas, rateHistory, 'v (p.ứ/s)', 'fwd', 'rev', 'Chiều thuận', 'Chiều nghịch', rateSelectedIndex, rateChartZoom, rateChartCanvas);
 }
 
 function transformVec4(m, v) {
@@ -753,7 +805,6 @@ function getScreenNeighborIndices(grid, screenPos) {
 function drawLabels() {
   labelCtx.clearRect(0, 0, labelCanvas.width, labelCanvas.height);
   
-  // TỐI ƯU HIỆU SUẤT KHỦNG KHIẾP: Set font 1 lần duy nhất ở ngoài cùng
   labelCtx.font = 'bold 14px Arial, sans-serif'; 
   labelCtx.textAlign = 'center';
   labelCtx.textBaseline = 'middle';
@@ -776,7 +827,6 @@ function drawLabels() {
     let occluded = false;
 
     let neighbors = getScreenNeighborIndices(screenGrid, cur.s);
-    // Sử dụng .some() tương đương với break trong for loop
     neighbors.some(j => {
       if (j === i) return false;
       let other = info[j];
@@ -793,7 +843,6 @@ function drawLabels() {
     });
 
     if (!occluded) {
-      // Dùng Scale đồ họa Vector để vẽ nhãn thay vì thay đổi cỡ font liên tục
       let scale = Math.max(0.4, cur.screenR / 13);
       
       labelCtx.save();
@@ -850,7 +899,10 @@ function syncCount(type, target) {
   }
   updateRadiusScale();
   updateCountsPanel();
-  recordConcSample();
+  
+  if (!isPlaying) {
+    recordConcSample();
+  }
 }
 
 function updateRadiusScale() {
@@ -907,27 +959,30 @@ function resetAll() {
   setReactionMode('reversible');
   labelCtx.clearRect(0, 0, labelCanvas.width, labelCanvas.height);
 
-  simTime = 0;
-  chartSampleAccumulator = 0;
+  concTime = 0;
+  concSampleAccumulator = 0;
   concHistory = [];
   concSelectedIndex = -1;
 
-  collisionHistory = [];
-  collisionWindowAB = 0;
-  collisionWindowCD = 0;
-  collisionWindowStart = 0;
-  collisionSelectedIndex = -1;
+  rateTime = 0;
+  rateSampleAccumulator = 0;
+  rateHistory = [];
+  fwdCount = 0;
+  revCount = 0;
+  fwdRateEMA = 0;
+  revRateEMA = 0;
+  isWaitingForFirstReaction = true;
+  rateSelectedIndex = -1;
 
   concChartZoom = null;
-  collisionChartZoom = null;
+  rateChartZoom = null;
   chartDragState.canvas = null;
 
   updateCountsPanel();
   recordConcSample();
-  recordCollisionZeroSample();
 
   if (showConcChart) drawConcChart();
-  if (showCollisionChart) drawCollisionChart();
+  if (showRateChart) drawRateChart();
 }
 
 function updateCountsPanel() {
@@ -1063,9 +1118,6 @@ function handleCollisions() {
       let minD = m1.radius + m2.radius;
       
       if (d < minD) {
-        if (isABPair(m1.type, m2.type)) collisionWindowAB++;
-        else if (isCDPair(m1.type, m2.type)) collisionWindowCD++;
-
         let mid = p5.Vector.lerp(m1.pos, m2.pos, 0.5);
         let normal = p5.Vector.sub(m2.pos, m1.pos);
         if (normal.magSq() < 0.0001) normal = p5.Vector.random3D();
@@ -1080,10 +1132,12 @@ function handleCollisions() {
             newType1 = 'C'; newType2 = 'D';
             flashColor = [255, 45, 45]; 
             freq = 220;
+            fwdCount++; // Tăng đếm phản ứng chiều thuận
           } else {
             newType1 = 'A'; newType2 = 'B';
             flashColor = [255, 225, 30]; 
             freq = 330;
+            revCount++; // Tăng đếm phản ứng chiều nghịch
           }
 
           let r1 = BASE_RADIUS[newType1] * radiusScale;
@@ -1162,23 +1216,40 @@ function draw() {
     frameGrid = buildSpatialGrid(frameCellSize);
 
     let dt = deltaTime / 1000;
-    simTime += dt;
-
-    chartSampleAccumulator += dt;
-    if (chartSampleAccumulator >= CHART_SAMPLE_INTERVAL) {
-      chartSampleAccumulator -= CHART_SAMPLE_INTERVAL;
+    
+    // 1. CẬP NHẬT ĐỒ THỊ NỒNG ĐỘ (Chạy ngay lập tức)
+    concTime += dt;
+    concSampleAccumulator += dt;
+    if (concSampleAccumulator >= CHART_SAMPLE_INTERVAL) {
+      concSampleAccumulator -= CHART_SAMPLE_INTERVAL;
       recordConcSample();
     }
-
-    if (simTime - collisionWindowStart >= COLLISION_WINDOW) {
-      let windowsPassed = Math.floor((simTime - collisionWindowStart) / COLLISION_WINDOW);
-      if (windowsPassed > 5) {
-        collisionWindowStart = simTime;
-      } else {
-        Array.from({ length: windowsPassed }).forEach(() => {
-          collisionWindowStart += COLLISION_WINDOW;
-          flushCollisionWindow(collisionWindowStart);
-        });
+    
+    // 2. CẬP NHẬT ĐỒ THỊ TỐC ĐỘ (Chờ phản ứng đầu tiên)
+    if (isWaitingForFirstReaction) {
+      if (fwdCount > 0 || revCount > 0) {
+        isWaitingForFirstReaction = false;
+        
+        // Neo điểm t=0 cho Đồ thị Tốc độ
+        rateTime = 0; 
+        rateSampleAccumulator = 0;
+        
+        fwdRateEMA = fwdCount / CHART_SAMPLE_INTERVAL;
+        revRateEMA = revCount / CHART_SAMPLE_INTERVAL; // Sẽ bằng 0 nếu A+B va chạm trước
+        
+        let f = Math.round(fwdRateEMA * 10) / 10;
+        let r = Math.round(revRateEMA * 10) / 10;
+        rateHistory.push({ t: 0, fwd: f, rev: r }); // Ghi nhận điểm (0, f, 0)
+        
+        fwdCount = 0;
+        revCount = 0;
+      }
+    } else {
+      rateTime += dt;
+      rateSampleAccumulator += dt;
+      if (rateSampleAccumulator >= CHART_SAMPLE_INTERVAL) {
+        rateSampleAccumulator -= CHART_SAMPLE_INTERVAL;
+        recordRateSample();
       }
     }
   }
@@ -1198,7 +1269,7 @@ function draw() {
   }
 
   if (showConcChart) drawConcChart();
-  if (showCollisionChart) drawCollisionChart();
+  if (showRateChart) drawRateChart();
 }
 
 function windowResized() {
