@@ -1,7 +1,7 @@
 // noprotect
 // ============================================================
 // MÔ PHỎNG PHẢN ỨNG THUẬN NGHỊCH 3D - HÓA HỌC ABC
-// PHIÊN BẢN CHUẨN VẬT LÝ KHỐI LƯỢNG, CHỐNG XUYÊN HẦM & KHỬ NHIỄU THÍCH ỨNG
+// PHIÊN BẢN CHUẨN ĐỘNG HÓA HỌC (ĐỒ THỊ TỐC ĐỘ BẮT ĐẦU TỪ MAX)
 // ============================================================
 
 let BOX_SIZE = 320;
@@ -39,6 +39,7 @@ let neighborsBuffer = new Int32Array(5000);
 let neighborsCount = 0;
 let frameCellSize = 16;
 
+const LOOP_50 = Array.from({length: 50}); 
 const LOOP_5000 = Array.from({length: 5000}); 
 const GRID_OFFSETS = [];
 for (let dx = -1; dx <= 1; dx++) {
@@ -48,7 +49,6 @@ for (let dx = -1; dx <= 1; dx++) {
     }
   }
 }
-// Sắp xếp ưu tiên quét từ tâm ra ngoài để không bỏ sót hạt ở gần
 GRID_OFFSETS.sort((a, b) => a.dSq - b.dSq);
 
 const GRID_OFFSETS_2D = [];
@@ -82,6 +82,7 @@ let concChartCanvas, concChartCtx;
 let concHistory = []; 
 let concSelectedIndex = -1; 
 
+// THUẬT TOÁN ĐỒ THỊ TỐC ĐỘ TỪ MAX
 let rateTime = 0; 
 let rateSampleAccumulator = 0;
 let showRateChart = false;
@@ -91,7 +92,13 @@ let fwdCount = 0;
 let revCount = 0; 
 let fwdRateEMA = 0; 
 let revRateEMA = 0; 
-let isWaitingForFirstReaction = true; 
+
+let rateChartState = 0; // 0: Đợi phản ứng, 1: Leo lên Max, 2: Bắt đầu vẽ biểu đồ
+let tempMaxRate = 0;
+let tempMaxFwdEMA = 0;
+let tempMaxRevEMA = 0;
+
+const RATE_EMA_ALPHA = 0.15; 
 let rateSelectedIndex = -1; 
 
 let concChartZoom = null;
@@ -366,30 +373,54 @@ function recordRateSample() {
   let instFwd = fwdCount / CHART_SAMPLE_INTERVAL;
   let instRev = revCount / CHART_SAMPLE_INTERVAL;
 
-  // THUẬT TOÁN LÀM MƯỢT THÍCH ỨNG (ADAPTIVE SMOOTHING)
-  // Tự động triệt tiêu hiện tượng răng cưa khi nồng độ lên mức hàng chục nghìn
   let total = molecules.length;
-  let dynamicAlpha = 0.15; // Mặc định phản hồi nhanh ở nồng độ thấp
-  
+  let dynamicAlpha = 0.15; 
   if (total > PERFORMANCE_THRESHOLD) {
-    // Ép mượt mạnh hơn (hạ alpha xuống 0.02) để biểu diễn chuẩn xác tính chất vĩ mô của nhiệt động lực học
     dynamicAlpha = map(total, PERFORMANCE_THRESHOLD, MAX_PER_TYPE * 2, 0.15, 0.02, true);
   }
 
-  fwdRateEMA = dynamicAlpha * instFwd + (1 - dynamicAlpha) * fwdRateEMA;
-  revRateEMA = dynamicAlpha * instRev + (1 - dynamicAlpha) * revRateEMA;
+  // Quản lý Trạng thái dò tìm đỉnh Max
+  if (rateChartState === 0) {
+    if (fwdCount > 0 || revCount > 0) {
+      rateChartState = 1;
+      fwdRateEMA = instFwd;
+      revRateEMA = instRev;
+      tempMaxFwdEMA = fwdRateEMA;
+      tempMaxRevEMA = revRateEMA;
+      tempMaxRate = Math.max(fwdRateEMA, revRateEMA);
+    }
+  } else {
+    fwdRateEMA = dynamicAlpha * instFwd + (1 - dynamicAlpha) * fwdRateEMA;
+    revRateEMA = dynamicAlpha * instRev + (1 - dynamicAlpha) * revRateEMA;
+  }
 
   let f = Math.round(fwdRateEMA * 10) / 10, r = Math.round(revRateEMA * 10) / 10;
   
-  if (rateHistory.length > 0 && rateHistory[rateHistory.length - 1].t === rateTime) {
-    rateHistory[rateHistory.length - 1] = { t: rateTime, fwd: f, rev: r };
-  } else {
+  if (rateChartState === 1) {
+    let currentMax = Math.max(fwdRateEMA, revRateEMA);
+    if (currentMax >= tempMaxRate) {
+      // Đang trên đà leo dốc, cập nhật kỷ lục Max
+      tempMaxRate = currentMax;
+      tempMaxFwdEMA = fwdRateEMA;
+      tempMaxRevEMA = revRateEMA;
+    } else {
+      // Đã chạm đỉnh và rớt xuống. Neo đỉnh vừa qua vào tọa độ t=0
+      rateChartState = 2;
+      rateTime = 0.1; 
+      rateHistory.push({ t: 0, fwd: Math.round(tempMaxFwdEMA*10)/10, rev: Math.round(tempMaxRevEMA*10)/10 });
+      rateHistory.push({ t: rateTime, fwd: f, rev: r });
+    }
+  } else if (rateChartState === 2) {
+    rateTime += CHART_SAMPLE_INTERVAL;
+    rateTime = Math.round(rateTime * 10) / 10; // Chống trượt sai số float point
+    
     rateHistory.push({ t: rateTime, fwd: f, rev: r });
     if (rateHistory.length > CHART_MAX_SAMPLES) {
       rateHistory.splice(0, rateHistory.length - CHART_MAX_SAMPLES);
       if (rateSelectedIndex >= 0) rateSelectedIndex = Math.max(0, rateSelectedIndex - 1);
     }
   }
+  
   fwdCount = 0; revCount = 0;
 }
 
@@ -402,10 +433,10 @@ function renderLineChart(ctx, canvasEl, history, yLabel, seriesAKey, seriesBKey,
   const plotW = Math.max(1, w - padLeft - padRight), plotH = Math.max(1, h - padTop - padBottom);
   let isRateChart = (yLabel === 'v (p.ứ/s)');
 
-  if (isRateChart && history.length < 2) {
+  if (isRateChart && rateChartState < 2) {
     ctx.fillStyle = 'rgba(255,255,255,0.4)'; ctx.font = '11px Arial, sans-serif';
     ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
-    ctx.fillText('Đang chờ phản ứng đầu tiên...', padLeft + plotW / 2, padTop + plotH / 2);
+    ctx.fillText('Đang dò tìm đỉnh Max tốc độ...', padLeft + plotW / 2, padTop + plotH / 2);
     return;
   }
   if (!isRateChart && history.length < 2) { if (history.length === 0) return; }
@@ -665,16 +696,70 @@ function constrainCount(v, inputEl) {
   return v;
 }
 
+// ---------------- THUẬT TOÁN SINH HẠT O(1) KHÔNG ĐÈ LẤP (ANTI-OVERLAP) ----------------
 function syncCount(type, target) {
   let count = 0;
   molecules.forEach(m => { if (m.type === type) count++; });
   let diff = target - count;
   
   if (diff > 0) {
-    let r = BASE_RADIUS[type] * radiusScale, m = HALF - r;
+    let futureTotal = molecules.length + diff;
+    
+    if (futureTotal <= PERFORMANCE_THRESHOLD) {
+      radiusScale = map(futureTotal, 0, PERFORMANCE_THRESHOLD, 1.0, 0.4, true);
+    } else {
+      let scaleRatio = Math.cbrt(PERFORMANCE_THRESHOLD / futureTotal);
+      radiusScale = 0.4 * scaleRatio;
+    }
+    radiusScale = constrain(radiusScale, 0.08, 1.0); 
+    molecules.forEach(m => { m.radius = BASE_RADIUS[m.type] * radiusScale; });
+
+    let r = BASE_RADIUS[type] * radiusScale;
+    let mBound = HALF - r;
+
+    frameCellSize = currentCellSize();
+    buildSpatialGrid(frameCellSize);
+
     Array.from({length: diff}).forEach(() => {
-      molecules.push(new Molecule(type, createVector(random(-m, m), random(-m, m), random(-m, m))));
+      let pos;
+      
+      LOOP_50.some(() => {
+        pos = createVector(random(-mBound, mBound), random(-mBound, mBound), random(-mBound, mBound));
+        let overlapping = false;
+
+        getNeighborIndices(frameCellSize, pos);
+
+        neighborsBuffer.subarray(0, neighborsCount).some(j => {
+          let other = molecules[j];
+          let minDist = r + other.radius + 0.1; 
+          let dx = pos.x - other.pos.x;
+          let dy = pos.y - other.pos.y;
+          let dz = pos.z - other.pos.z;
+          
+          if (dx*dx + dy*dy + dz*dz < minDist * minDist) {
+            overlapping = true;
+            return true; 
+          }
+          return false;
+        });
+
+        if (!overlapping) return true; 
+        return false; 
+      });
+
+      molecules.push(new Molecule(type, pos));
+
+      let newIdx = molecules.length - 1;
+      let offset = Math.floor(GRID_DIM / 2);
+      let ix = constrain(Math.floor(pos.x / frameCellSize) + offset, 0, GRID_DIM - 1);
+      let iy = constrain(Math.floor(pos.y / frameCellSize) + offset, 0, GRID_DIM - 1);
+      let iz = constrain(Math.floor(pos.z / frameCellSize) + offset, 0, GRID_DIM - 1);
+
+      let bucketIdx = ix + iy * GRID_DIM + iz * GRID_DIM * GRID_DIM;
+      gridNext[newIdx] = gridHead[bucketIdx];
+      gridHead[bucketIdx] = newIdx;
     });
+
   } else if (diff < 0) {
     let toRemove = -diff;
     let removed = 0;
@@ -682,9 +767,9 @@ function syncCount(type, target) {
       if (m.type === type && removed < toRemove) { removed++; return false; }
       return true;
     });
+    updateRadiusScale();
   }
   
-  updateRadiusScale();
   checkPerformanceMode(); 
   updateCountsPanel();
   if (!isPlaying) recordConcSample();
@@ -735,7 +820,7 @@ function resetAll() {
 
   concTime = 0; concSampleAccumulator = 0; concHistory = []; concSelectedIndex = -1;
   rateTime = 0; rateSampleAccumulator = 0; rateHistory = []; fwdCount = 0; revCount = 0;
-  fwdRateEMA = 0; revRateEMA = 0; isWaitingForFirstReaction = true; rateSelectedIndex = -1;
+  fwdRateEMA = 0; revRateEMA = 0; rateChartState = 0; tempMaxRate = 0; tempMaxFwdEMA = 0; tempMaxRevEMA = 0; rateSelectedIndex = -1;
   concChartZoom = null; rateChartZoom = null; chartDragState.canvas = null;
 
   updateCountsPanel(); recordConcSample();
@@ -964,22 +1049,10 @@ function draw() {
       recordConcSample();
     }
     
-    if (isWaitingForFirstReaction) {
-      if (fwdCount > 0 || revCount > 0) {
-        isWaitingForFirstReaction = false;
-        rateTime = 0; rateSampleAccumulator = 0;
-        fwdRateEMA = fwdCount / CHART_SAMPLE_INTERVAL;
-        revRateEMA = revCount / CHART_SAMPLE_INTERVAL; 
-        
-        rateHistory.push({ t: 0, fwd: Math.round(fwdRateEMA*10)/10, rev: Math.round(revRateEMA*10)/10 }); 
-        fwdCount = 0; revCount = 0;
-      }
-    } else {
-      rateTime += dt; rateSampleAccumulator += dt;
-      if (rateSampleAccumulator >= CHART_SAMPLE_INTERVAL) {
-        rateSampleAccumulator -= CHART_SAMPLE_INTERVAL;
-        recordRateSample();
-      }
+    rateSampleAccumulator += dt;
+    if (rateSampleAccumulator >= CHART_SAMPLE_INTERVAL) {
+      rateSampleAccumulator -= CHART_SAMPLE_INTERVAL;
+      recordRateSample();
     }
   }
 
