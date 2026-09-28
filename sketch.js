@@ -1,7 +1,7 @@
 // noprotect
 // ============================================================
 // MÔ PHỎNG PHẢN ỨNG THUẬN NGHỊCH 3D - HÓA HỌC ABC
-// PHIÊN BẢN CHUẨN ĐỘNG HÓA HỌC: FIX LỖI TƯƠNG TÁC ĐỒ THỊ 100%
+// PHIÊN BẢN CHUẨN ĐỘNG HÓA HỌC: FIX LOGIC NỒNG ĐỘ TẠI T=0
 // ============================================================
 
 let BOX_SIZE = 320;
@@ -223,7 +223,6 @@ function resizeLabelCanvas() {
   labelCtx.setTransform(dpr, 0, 0, dpr, 0, 0);
 }
 
-// Trục tọa độ toàn cầu để đồng bộ 2 đồ thị
 function getGlobalBounds() {
   let gMin = 0, gMax = 1;
   if (concHistory.length > 0) {
@@ -256,7 +255,6 @@ function setupChartCanvases() {
 
   resizeChartCanvases();
 
-  // CHÚ Ý: Truyền hàm getter () => concHistory để tránh đứt tham chiếu khi Reset
   setupZoomableChart(concChartCanvas, () => concHistory, 
     (x, y) => { 
       if (x === null) concSelectedTime = null; 
@@ -304,11 +302,11 @@ function setupZoomableChart(canvasEl, getHistory, onClick, onRedraw, setZoom, ge
       chartDragState.canvas = null;
       canvasEl.releasePointerCapture(evt.pointerId);
       let dx = chartDragState.currentX - chartDragState.startX;
-      if (Math.abs(dx) > 5) { // Tạo khung Zoom nếu kéo chuột xa hơn 5px
+      if (Math.abs(dx) > 5) {
         let t1 = getChartTimeForX(chartDragState.startX, canvasEl, getZoom(), getBounds);
         let t2 = getChartTimeForX(chartDragState.currentX, canvasEl, getZoom(), getBounds);
         setZoom({ min: Math.min(t1, t2), max: Math.max(t1, t2) });
-      } else { // Click bình thường để hiện bảng số liệu
+      } else {
         let rect = canvasEl.getBoundingClientRect();
         onClick(evt.clientX - rect.left, evt.clientY - rect.top);
       }
@@ -316,7 +314,6 @@ function setupZoomableChart(canvasEl, getHistory, onClick, onRedraw, setZoom, ge
     }
   });
 
-  // Double click tắt bảng thông tin và reset Zoom
   canvasEl.addEventListener('dblclick', () => { 
     setZoom(null); 
     onClick(null, null); 
@@ -391,7 +388,7 @@ function recordConcSampleInitial() {
   molecules.forEach(m => {
     if (m.type === 'A' || m.type === 'B') ab++; else cd++;
   });
-  concHistory.length = 0; // Giữ nguyên tham chiếu để chuột không bị lỗi
+  concHistory.length = 0; 
   concHistory.push({ t: 0, ab, cd }); 
 }
 
@@ -439,11 +436,10 @@ function renderLineChart(ctx, canvasEl, history, yLabel, seriesAKey, seriesBKey,
 
   function yFor(n) { return padTop + plotH - (n / maxN) * plotH; }
 
-  // THUẬT TOÁN HIT-TESTING (Dò điểm chuột)
   let clickReq = isRateChart ? rateClickRequest : concClickRequest;
   if (clickReq) {
       let hit = false;
-      let bestDist = 20; // Nhạy trong vòng bán kính 20px
+      let bestDist = 20; 
       let bestTime = null;
 
       for(let i = 0; i < history.length; i++) {
@@ -511,7 +507,6 @@ function renderLineChart(ctx, canvasEl, history, yLabel, seriesAKey, seriesBKey,
   });
   ctx.stroke();
 
-  // Vẽ mốc ngắm cho Data Point đã chọn
   let markerTextData = null;
   if (selectedTime !== null && history.length > 0) {
     let bestPoint = null;
@@ -536,7 +531,6 @@ function renderLineChart(ctx, canvasEl, history, yLabel, seriesAKey, seriesBKey,
     }
   }
 
-  // Chế độ kéo chuột Zoom Vùng
   if (chartDragState.canvas === activeCanvas) {
     ctx.fillStyle = 'rgba(100, 150, 255, 0.3)';
     let rx = Math.min(chartDragState.startX, chartDragState.currentX), endX = Math.max(chartDragState.startX, chartDragState.currentX);
@@ -559,7 +553,6 @@ function renderLineChart(ctx, canvasEl, history, yLabel, seriesAKey, seriesBKey,
   }
   ctx.restore(); 
 
-  // Vẽ Khung Bảng Thông số
   if (markerTextData) {
     let { x, s } = markerTextData;
     let lineA = seriesALabel + ': ' + s[seriesAKey], lineB = seriesBLabel + ': ' + s[seriesBKey], lineT = 't = ' + s.t.toFixed(2) + ' s';
@@ -567,7 +560,6 @@ function renderLineChart(ctx, canvasEl, history, yLabel, seriesAKey, seriesBKey,
     let textW = Math.max(ctx.measureText(lineT).width, ctx.measureText(lineA).width, ctx.measureText(lineB).width);
     let boxW = textW + 14, boxH = 44, boxX = x + 8;
     
-    // Nếu sát lề phải thì lật bảng sang trái để không bị khuất
     if (boxX + boxW > w - 2) boxX = x - boxW - 8; 
     boxX = constrain(boxX, 2, w - boxW - 2); 
     let boxY = padTop + 2;
@@ -850,7 +842,7 @@ function resetAll() {
 
   globalSimTime = 0; chartSampleAccumulator = 0; 
   
-  // Dùng phương thức làm rỗng mảng để KHÔNG làm đứt kết nối của sự kiện Chuột
+  // FIX CHỐT: GIỮ NGUYÊN BỘ NHỚ LỊCH SỬ ĐỂ KHÔNG LÀM ĐỨT LINK HIT-TESTING CHUỘT
   concHistory.length = 0; concSelectedTime = null; concClickRequest = null;
   rateHistory.length = 0; rateRolling.length = 0;
   
@@ -983,7 +975,7 @@ function handleCollisions() {
           toRemoveFlag[i] = 1;
           toRemoveFlag[j] = 1;
           
-          let newType1, newType2, flashColor, freq;
+          // GHI NHẬN PHẢN ỨNG CHO ĐỒ THỊ
           if (m1.type === 'A' || m1.type === 'B') {
             newType1 = 'C'; newType2 = 'D'; flashColor = [255, 45, 45]; freq = 220; fwdCountThisFrame++; 
           } else {
@@ -1074,23 +1066,20 @@ function draw() {
     });
 
     if (isWaitingForFirstReaction) {
+        // GHI NHẬN ĐIỂM XUẤT PHÁT ĐỒ THỊ TỐC ĐỘ (T=0)
+        let totalFwd = 0;
+        let totalRev = 0;
+        let ab = 0, cd = 0;
+        molecules.forEach(m => { if(m.type==='A' || m.type==='B') ab++; else cd++; });
+        
         if (fwdCountThisFrame > 0 || revCountThisFrame > 0) {
             isWaitingForFirstReaction = false;
-            globalSimTime = 0;
-            chartSampleAccumulator = 0;
             
-            concHistory.length = 0;
-            rateHistory.length = 0;
-            rateRolling.length = 0;
-            
-            let ab = 0, cd = 0;
-            molecules.forEach(m => { if(m.type==='A' || m.type==='B') ab++; else cd++; });
-            concHistory.push({ t: 0, ab, cd });
-            
+            // Xóa điểm đệm, đưa vào điểm t=0 thực tế từ hệ thống lấy mẫu ban đầu
             let currentRateF = fwdCountThisFrame / FIXED_DT;
             let currentRateR = revCountThisFrame / FIXED_DT;
-            rateHistory.push({ t: 0, fwd: Math.round(currentRateF*10)/10, rev: Math.round(currentRateR*10)/10 });
             
+            rateHistory.push({ t: 0, fwd: Math.round(currentRateF*10)/10, rev: Math.round(currentRateR*10)/10 });
             rateRolling.push({ fwd: fwdCountThisFrame, rev: revCountThisFrame });
         }
     } else {
