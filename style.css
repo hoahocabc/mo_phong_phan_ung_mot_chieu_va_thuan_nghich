@@ -3,6 +3,7 @@ body, html {
   font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
   background-color: #0f1115;
   color: #e2e8f0;
+  overflow: hidden; /* Tránh cuộn trang ngoài ý muốn trên mobile */
 }
 
 #app-container {
@@ -17,6 +18,7 @@ body, html {
   padding: 20px; box-sizing: border-box; overflow-y: auto;
   box-shadow: 2px 0 10px rgba(0,0,0,0.5);
   z-index: 10;
+  touch-action: pan-y; /* Cho phép cuộn dọc sidebar trên điện thoại */
 }
 
 #sidebar h2 {
@@ -45,6 +47,7 @@ body, html {
   padding: 10px; font-size: 13px; font-weight: 600;
   cursor: pointer; transition: all 0.2s ease;
   text-align: center; user-select: none;
+  touch-action: manipulation; /* Tối ưu độ trễ cảm ứng */
 }
 .control-btn:hover { background: #3f4451; color: #fff; }
 .control-btn:active { transform: scale(0.96); }
@@ -81,13 +84,13 @@ body, html {
 input[type=range] { width: 100%; cursor: pointer; accent-color: #3b82f6; }
 
 /* KHU VỰC CANVAS 3D */
-#canvas-holder { flex: 1; position: relative; overflow: hidden; }
+#canvas-holder { flex: 1; position: relative; overflow: hidden; touch-action: none; }
 canvas { display: block; outline: none; }
 #labelCanvas { position: absolute; top: 0; left: 0; pointer-events: none; }
 
 /* BẢNG SỐ LƯỢNG NỔI */
 #countsPanel {
-  position: absolute; top: 20px; right: 20px;
+  position: absolute; top: 15px; right: 15px;
   background: rgba(26, 29, 36, 0.85); backdrop-filter: blur(8px);
   padding: 16px; border-radius: 10px; border: 1px solid rgba(255,255,255,0.1);
   box-shadow: 0 4px 15px rgba(0,0,0,0.3); pointer-events: none; z-index: 5;
@@ -101,16 +104,16 @@ canvas { display: block; outline: none; }
   width: 12px; height: 12px; border-radius: 3px; display: inline-block;
 }
 
-/* ĐỒ THỊ XẾP DỌC GỌN GÀNG */
+/* ĐỒ THỊ XẾP DỌC GỌN GÀNG GÓC TRÊN BÊN TRÁI */
 .panels-container {
   position: absolute; 
-  bottom: 20px; 
-  left: 20px; 
-  width: 340px; 
+  top: 15px;      /* Đẩy lên góc trên */
+  left: 15px;     /* Nằm ở bên trái */
+  width: 260px;   /* Thu hẹp chiều ngang */
   max-height: calc(100vh - 40px); 
   display: flex; 
   flex-direction: column; 
-  justify-content: flex-end;
+  justify-content: flex-start; /* Sắp xếp từ trên xuống */
   gap: 12px; 
   pointer-events: none;
   z-index: 5;
@@ -118,12 +121,13 @@ canvas { display: block; outline: none; }
 
 .chart-panel {
   width: 100%; 
-  height: 180px; 
-  min-height: 140px;
+  height: 150px; /* Điều chỉnh chiều cao phù hợp với độ hẹp mới */
+  min-height: 120px;
   background: rgba(26, 29, 36, 0.85); backdrop-filter: blur(8px);
   border-radius: 10px; border: 1px solid rgba(255,255,255,0.1);
   padding: 8px 12px; box-sizing: border-box; box-shadow: 0 8px 20px rgba(0,0,0,0.4);
   pointer-events: auto; 
+  touch-action: none; /* Khóa cuộn trang khi kéo đồ thị trên Mobile */
   display: flex; 
   flex-direction: column;
 }
@@ -134,4 +138,61 @@ canvas { display: block; outline: none; }
   width: 100% !important;
   height: 100% !important;
   display: block;
+}
+
+/* BỐ CỤC MOBILE (ĐIỆN THOẠI/TABLET NHỎ) */
+@media (max-width: 768px) {
+  #app-container {
+    flex-direction: column; /* Chuyển thành dạng cột: sidebar trên, canvas dưới */
+  }
+  
+  #sidebar {
+    width: 100%;
+    height: 45vh; /* Chiếm 45% màn hình */
+    border-right: none;
+    border-bottom: 2px solid #3f4451;
+    padding: 12px;
+  }
+  
+  #canvas-holder {
+    height: 55vh; /* Chiếm phần còn lại */
+  }
+
+  .control-btn {
+    min-height: 40px; /* Nút bấm lớn hơn dễ chạm */
+    font-size: 12px;
+  }
+  
+  .control-group {
+    padding: 12px;
+  }
+
+  /* Thu nhỏ đồ thị và số lượng cho vừa màn hình điện thoại */
+  .panels-container {
+    width: 200px;
+    top: 10px;
+    left: 10px;
+    gap: 8px;
+  }
+
+  .chart-panel {
+    height: 120px;
+    padding: 4px 6px;
+  }
+  
+  #countsPanel {
+    top: 10px;
+    right: 10px;
+    padding: 10px;
+  }
+  
+  .count-item {
+    font-size: 12px;
+    margin-bottom: 6px;
+  }
+  
+  .color-box {
+    width: 10px;
+    height: 10px;
+  }
 }

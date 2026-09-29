@@ -2,6 +2,7 @@
 // ============================================================
 // MÔ PHỎNG PHẢN ỨNG THUẬN NGHỊCH 3D - HÓA HỌC ABC
 // BẢN HOÀN THIỆN TỐI HẬU: FULL LOGIC KINETICS, UI, VÀ CÁC LỚP VẬT LÝ
+// ĐÃ TỐI ƯU HÓA MOBILE VÀ VỊ TRÍ ĐỒ THỊ
 // ============================================================
 
 let BOX_SIZE = 320;
@@ -194,6 +195,7 @@ function toggleCountsPanel() {
   }
 }
 
+// Bắt sự kiện chạm/nhấp vào UI để khóa tính năng OrbitControl của 3D
 function setupUIHoverGuards() {
   const uiElements = [
     document.getElementById('sidebar'),
@@ -205,6 +207,9 @@ function setupUIHoverGuards() {
     if (el) {
       el.addEventListener('pointerenter', () => { mouseOverUI = true; });
       el.addEventListener('pointerleave', () => { mouseOverUI = false; });
+      // Thêm các sự kiện chạm cho Mobile để tránh xung đột thao tác
+      el.addEventListener('touchstart', () => { mouseOverUI = true; }, {passive: true});
+      el.addEventListener('touchend', () => { mouseOverUI = false; }, {passive: true});
     }
   });
 }
@@ -252,14 +257,14 @@ function getGlobalBounds() {
 function drawConcChart() { 
   if (showConcChart && concChartCtx) {
     let b = getGlobalBounds();
-    renderLineChart(concChartCtx, concChartCanvas, concHistory, 'n', 'ab', 'cd', 'A + B', 'C + D', concSelectedTime, concChartZoom, concChartCanvas, b.min, b.max, 'BIỂU ĐỒ NỒNG ĐỘ THEO THỜI GIAN');
+    renderLineChart(concChartCtx, concChartCanvas, concHistory, 'n', 'ab', 'cd', 'A + B', 'C + D', concSelectedTime, concChartZoom, concChartCanvas, b.min, b.max, 'BIỂU ĐỒ NỒNG ĐỘ');
   }
 }
 
 function drawRateChart() { 
   if (showRateChart && rateChartCtx) {
     let b = getGlobalBounds();
-    renderLineChart(rateChartCtx, rateChartCanvas, rateHistory, 'v (p.ứ/s)', 'fwd', 'rev', 'Chiều thuận', 'Chiều nghịch', rateSelectedTime, rateChartZoom, rateChartCanvas, b.min, b.max, 'BIỂU ĐỒ TỐC ĐỘ PHẢN ỨNG');
+    renderLineChart(rateChartCtx, rateChartCanvas, rateHistory, 'v (p.ứ/s)', 'fwd', 'rev', 'Chiều thuận', 'Chiều nghịch', rateSelectedTime, rateChartZoom, rateChartCanvas, b.min, b.max, 'BIỂU ĐỒ TỐC ĐỘ');
   }
 }
 
@@ -297,7 +302,7 @@ function setupChartCanvases() {
 function setupZoomableChart(canvasEl, getHistory, onClick, onRedraw, setZoom, getZoom, getBounds) {
   canvasEl.addEventListener('pointerdown', (evt) => {
     let history = getHistory();
-    if (history.length === 0 || evt.button !== 0) return;
+    if (history.length === 0 || evt.button !== 0 && evt.pointerType === 'mouse') return;
     let rect = canvasEl.getBoundingClientRect();
     chartDragState.canvas = canvasEl;
     chartDragState.startX = evt.clientX - rect.left;
@@ -338,7 +343,7 @@ function setupZoomableChart(canvasEl, getHistory, onClick, onRedraw, setZoom, ge
 }
 
 function getChartTimeForX(x, canvasEl, zoom, getBounds) {
-  const w = canvasEl.clientWidth || 240, padLeft = 35, padRight = 10, plotW = Math.max(1, w - padLeft - padRight);
+  const w = canvasEl.clientWidth || 250, padLeft = 35, padRight = 10, plotW = Math.max(1, w - padLeft - padRight);
   let bounds = getBounds();
   let minT = bounds.min, maxT = bounds.max;
   if (zoom) { minT = zoom.min; maxT = zoom.max; }
@@ -357,8 +362,8 @@ function resizeChartCanvases() {
 function resizeOneChartCanvas(canvasEl, ctx) {
   if (!canvasEl) return;
   const dpr = Math.min(2, window.devicePixelRatio || 1);
-  const w = canvasEl.clientWidth || 340; 
-  const h = canvasEl.clientHeight || 180;
+  const w = canvasEl.clientWidth || 260;  // Giảm fallback về 260 cho giao diện gọn hơn
+  const h = canvasEl.clientHeight || 150; // Giảm fallback height
   canvasEl.width = Math.floor(w * dpr); 
   canvasEl.height = Math.floor(h * dpr);
   ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
@@ -417,11 +422,11 @@ function recordConcSampleInitial() {
 }
 
 function renderLineChart(ctx, canvasEl, history, yLabel, seriesAKey, seriesBKey, seriesALabel, seriesBLabel, selectedTime, zoom, activeCanvas, gMin, gMax, chartTitle) {
-  const w = canvasEl.clientWidth || 340, h = canvasEl.clientHeight || 180;
+  const w = canvasEl.clientWidth || 250, h = canvasEl.clientHeight || 150;
   ctx.clearRect(0, 0, w, h);
   ctx.fillStyle = 'rgba(0, 0, 0, 0.35)'; ctx.fillRect(0, 0, w, h);
 
-  const padLeft = 35, padRight = 10, padTop = 28, padBottom = 20;
+  const padLeft = 35, padRight = 10, padTop = 22, padBottom = 20; // Giảm padTop để tối ưu không gian hẹp
   const plotW = Math.max(1, w - padLeft - padRight), plotH = Math.max(1, h - padTop - padBottom);
   let isRateChart = (yLabel === 'v (p.ứ/s)');
 
@@ -430,12 +435,12 @@ function renderLineChart(ctx, canvasEl, history, yLabel, seriesAKey, seriesBKey,
   ctx.font = 'bold 11px Arial, sans-serif';
   ctx.textAlign = 'center';
   ctx.textBaseline = 'top';
-  ctx.fillText(chartTitle, padLeft + plotW / 2, 6);
+  ctx.fillText(chartTitle, padLeft + plotW / 2, 4);
 
   if (isRateChart && isWaitingForFirstReaction) {
-    ctx.fillStyle = 'rgba(255,255,255,0.4)'; ctx.font = '11px Arial, sans-serif';
+    ctx.fillStyle = 'rgba(255,255,255,0.4)'; ctx.font = '10px Arial, sans-serif';
     ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
-    ctx.fillText('Đang chờ phản ứng đầu tiên...', padLeft + plotW / 2, padTop + plotH / 2);
+    ctx.fillText('Đang chờ phản ứng...', padLeft + plotW / 2, padTop + plotH / 2);
     return;
   }
   if (!isRateChart && history.length < 2) { if (history.length === 0) return; }
