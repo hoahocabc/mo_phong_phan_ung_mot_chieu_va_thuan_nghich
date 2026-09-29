@@ -1,7 +1,7 @@
 // noprotect
 // ============================================================
 // MÔ PHỎNG PHẢN ỨNG THUẬN NGHỊCH 3D - HÓA HỌC ABC
-// PHIÊN BẢN CHUẨN ĐỘNG HÓA HỌC: FIX LOGIC NỒNG ĐỘ TẠI T=0
+// BẢN HOÀN THIỆN TỐI HẬU: FULL LOGIC KINETICS, UI, VÀ CÁC LỚP VẬT LÝ
 // ============================================================
 
 let BOX_SIZE = 320;
@@ -18,6 +18,7 @@ let isPlaying = false;
 let speedLevel = 3.0;
 let volumeLevel = 5;
 let showLabels = true;
+let isCountsVisible = true; 
 
 let reactionMode = 'reversible';
 let canvasHolder;
@@ -58,8 +59,8 @@ for (let dx = -1; dx <= 1; dx++) {
   }
 }
 
-let countAInput, countBInput, speedSlider, volumeSlider, playBtn, resetBtn, labelBtn;
-let concChartBtn, rateChartBtn, modeReversibleBtn, modeOneWayBtn;
+let countAInput, countBInput, speedSlider, volumeSlider;
+let playBtn, resetBtn, labelBtn, toggleCountsBtn, concChartBtn, rateChartBtn, modeReversibleBtn, modeOneWayBtn;
 let speedValLabel, volValLabel;
 let cntAEl, cntBEl, cntCEl, cntDEl;
 
@@ -126,13 +127,16 @@ function setup() {
   countBInput = select('#countB');
   speedSlider = select('#speedSlider');
   volumeSlider = select('#volumeSlider');
+  
   playBtn = select('#playBtn');
   resetBtn = select('#resetBtn');
   labelBtn = select('#labelBtn');
+  toggleCountsBtn = select('#toggleCountsBtn');
   concChartBtn = select('#concChartBtn');
   rateChartBtn = select('#rateChartBtn');
   modeReversibleBtn = select('#modeReversibleBtn');
   modeOneWayBtn = select('#modeOneWayBtn');
+  
   speedValLabel = select('#speedVal');
   volValLabel = select('#volVal');
 
@@ -157,7 +161,6 @@ function setup() {
     speedLevel = Number(speedSlider.value());
     speedValLabel.html(speedLevel.toFixed(1));
   });
-
   volumeSlider.input(() => {
     volumeLevel = Number(volumeSlider.value());
     volValLabel.html(volumeLevel);
@@ -166,6 +169,7 @@ function setup() {
   playBtn.mousePressed(togglePlay);
   resetBtn.mousePressed(resetAll);
   labelBtn.mousePressed(toggleLabels);
+  if(toggleCountsBtn) toggleCountsBtn.mousePressed(toggleCountsPanel);
   concChartBtn.mousePressed(toggleConcChart);
   rateChartBtn.mousePressed(toggleRateChart);
   modeReversibleBtn.mousePressed(() => setReactionMode('reversible'));
@@ -176,6 +180,18 @@ function setup() {
   
   globalSimTime = 0;
   recordConcSampleInitial();   
+}
+
+function toggleCountsPanel() {
+  isCountsVisible = !isCountsVisible;
+  let panel = document.getElementById('countsPanel');
+  if (isCountsVisible) {
+    toggleCountsBtn.html('📊 SL: BẬT').addClass('on');
+    if (panel) panel.style.display = ''; 
+  } else {
+    toggleCountsBtn.html('📊 SL: TẮT').removeClass('on');
+    if (panel) panel.style.display = 'none'; 
+  }
 }
 
 function setupUIHoverGuards() {
@@ -236,14 +252,14 @@ function getGlobalBounds() {
 function drawConcChart() { 
   if (showConcChart && concChartCtx) {
     let b = getGlobalBounds();
-    renderLineChart(concChartCtx, concChartCanvas, concHistory, 'n', 'ab', 'cd', 'A + B', 'C + D', concSelectedTime, concChartZoom, concChartCanvas, b.min, b.max);
+    renderLineChart(concChartCtx, concChartCanvas, concHistory, 'n', 'ab', 'cd', 'A + B', 'C + D', concSelectedTime, concChartZoom, concChartCanvas, b.min, b.max, 'BIỂU ĐỒ NỒNG ĐỘ THEO THỜI GIAN');
   }
 }
 
 function drawRateChart() { 
   if (showRateChart && rateChartCtx) {
     let b = getGlobalBounds();
-    renderLineChart(rateChartCtx, rateChartCanvas, rateHistory, 'v (p.ứ/s)', 'fwd', 'rev', 'Chiều thuận', 'Chiều nghịch', rateSelectedTime, rateChartZoom, rateChartCanvas, b.min, b.max);
+    renderLineChart(rateChartCtx, rateChartCanvas, rateHistory, 'v (p.ứ/s)', 'fwd', 'rev', 'Chiều thuận', 'Chiều nghịch', rateSelectedTime, rateChartZoom, rateChartCanvas, b.min, b.max, 'BIỂU ĐỒ TỐC ĐỘ PHẢN ỨNG');
   }
 }
 
@@ -322,7 +338,7 @@ function setupZoomableChart(canvasEl, getHistory, onClick, onRedraw, setZoom, ge
 }
 
 function getChartTimeForX(x, canvasEl, zoom, getBounds) {
-  const w = canvasEl.clientWidth || 240, padLeft = 30, padRight = 8, plotW = Math.max(1, w - padLeft - padRight);
+  const w = canvasEl.clientWidth || 240, padLeft = 35, padRight = 10, plotW = Math.max(1, w - padLeft - padRight);
   let bounds = getBounds();
   let minT = bounds.min, maxT = bounds.max;
   if (zoom) { minT = zoom.min; maxT = zoom.max; }
@@ -334,13 +350,17 @@ function getChartTimeForX(x, canvasEl, zoom, getBounds) {
 function resizeChartCanvases() {
   resizeOneChartCanvas(concChartCanvas, concChartCtx);
   resizeOneChartCanvas(rateChartCanvas, rateChartCtx);
+  if(showConcChart) drawConcChart();
+  if(showRateChart) drawRateChart();
 }
 
 function resizeOneChartCanvas(canvasEl, ctx) {
   if (!canvasEl) return;
   const dpr = Math.min(2, window.devicePixelRatio || 1);
-  const w = canvasEl.clientWidth || 240, h = canvasEl.clientHeight || 130;
-  canvasEl.width = Math.floor(w * dpr); canvasEl.height = Math.floor(h * dpr);
+  const w = canvasEl.clientWidth || 340; 
+  const h = canvasEl.clientHeight || 180;
+  canvasEl.width = Math.floor(w * dpr); 
+  canvasEl.height = Math.floor(h * dpr);
   ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
 }
 
@@ -348,12 +368,14 @@ function toggleConcChart() {
   showConcChart = !showConcChart;
   let panel = document.getElementById('concChartPanel');
   if (showConcChart) {
-    concChartBtn.html('📈 NỒNG ĐỘ: BẬT').addClass('on');
+    concChartBtn.html('📈 Nồng độ: BẬT').addClass('on');
     panel.classList.remove('hidden');
-    resizeOneChartCanvas(concChartCanvas, concChartCtx);
-    drawConcChart();
+    setTimeout(() => {
+        resizeOneChartCanvas(concChartCanvas, concChartCtx);
+        drawConcChart();
+    }, 10);
   } else {
-    concChartBtn.html('📈 NỒNG ĐỘ: TẮT').removeClass('on');
+    concChartBtn.html('📈 Nồng độ: TẮT').removeClass('on');
     panel.classList.add('hidden');
   }
 }
@@ -362,12 +384,14 @@ function toggleRateChart() {
   showRateChart = !showRateChart;
   let panel = document.getElementById('rateChartPanel');
   if (showRateChart) {
-    rateChartBtn.html('⚡ TỐC ĐỘ: BẬT').addClass('on');
+    rateChartBtn.html('⚡ Tốc độ: BẬT').addClass('on');
     panel.classList.remove('hidden');
-    resizeOneChartCanvas(rateChartCanvas, rateChartCtx);
-    drawRateChart();
+    setTimeout(() => {
+        resizeOneChartCanvas(rateChartCanvas, rateChartCtx);
+        drawRateChart();
+    }, 10);
   } else {
-    rateChartBtn.html('⚡ TỐC ĐỘ: TẮT').removeClass('on');
+    rateChartBtn.html('⚡ Tốc độ: TẮT').removeClass('on');
     panel.classList.add('hidden');
   }
 }
@@ -377,7 +401,7 @@ function checkPerformanceMode() {
   if (total > PERFORMANCE_THRESHOLD) {
     if (showLabels) {
       showLabels = false;
-      labelBtn.html('🏷 NHÃN: TẮT (TỐI GIẢN)').removeClass('on');
+      labelBtn.html('🏷 Nhãn: TẮT (TỐI GIẢN)').removeClass('on');
       labelCtx.clearRect(0, 0, labelCanvas.width, labelCanvas.height);
     }
   }
@@ -392,19 +416,26 @@ function recordConcSampleInitial() {
   concHistory.push({ t: 0, ab, cd }); 
 }
 
-function renderLineChart(ctx, canvasEl, history, yLabel, seriesAKey, seriesBKey, seriesALabel, seriesBLabel, selectedTime, zoom, activeCanvas, gMin, gMax) {
-  const w = canvasEl.clientWidth || 240, h = canvasEl.clientHeight || 130;
+function renderLineChart(ctx, canvasEl, history, yLabel, seriesAKey, seriesBKey, seriesALabel, seriesBLabel, selectedTime, zoom, activeCanvas, gMin, gMax, chartTitle) {
+  const w = canvasEl.clientWidth || 340, h = canvasEl.clientHeight || 180;
   ctx.clearRect(0, 0, w, h);
   ctx.fillStyle = 'rgba(0, 0, 0, 0.35)'; ctx.fillRect(0, 0, w, h);
 
-  const padLeft = 30, padRight = 8, padTop = 8, padBottom = 20;
+  const padLeft = 35, padRight = 10, padTop = 28, padBottom = 20;
   const plotW = Math.max(1, w - padLeft - padRight), plotH = Math.max(1, h - padTop - padBottom);
   let isRateChart = (yLabel === 'v (p.ứ/s)');
+
+  // Tiêu đề đồ thị
+  ctx.fillStyle = '#ffffff';
+  ctx.font = 'bold 11px Arial, sans-serif';
+  ctx.textAlign = 'center';
+  ctx.textBaseline = 'top';
+  ctx.fillText(chartTitle, padLeft + plotW / 2, 6);
 
   if (isRateChart && isWaitingForFirstReaction) {
     ctx.fillStyle = 'rgba(255,255,255,0.4)'; ctx.font = '11px Arial, sans-serif';
     ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
-    ctx.fillText('Đang chờ va chạm đầu tiên...', padLeft + plotW / 2, padTop + plotH / 2);
+    ctx.fillText('Đang chờ phản ứng đầu tiên...', padLeft + plotW / 2, padTop + plotH / 2);
     return;
   }
   if (!isRateChart && history.length < 2) { if (history.length === 0) return; }
@@ -812,10 +843,10 @@ function updateRadiusScale() {
 function togglePlay() {
   isPlaying = !isPlaying;
   if (isPlaying) {
-    playBtn.html('⏸ STOP').addClass('stop');
+    playBtn.html('⏸ STOP').removeClass('primary').addClass('danger');
     if (getAudioContext().state !== 'running') userStartAudio();
   } else {
-    playBtn.html('▶ PLAY').removeClass('stop');
+    playBtn.html('▶ PLAY').removeClass('danger').addClass('primary');
   }
 }
 
@@ -825,13 +856,13 @@ function toggleLabels() {
     return;
   }
   showLabels = !showLabels;
-  if (showLabels) labelBtn.html('🏷 NHÃN: BẬT').addClass('on');
-  else { labelBtn.html('🏷 NHÃN: TẮT').removeClass('on'); labelCtx.clearRect(0, 0, labelCanvas.width, labelCanvas.height); }
+  if (showLabels) labelBtn.html('🏷 Nhãn: BẬT').addClass('on');
+  else { labelBtn.html('🏷 Nhãn: TẮT').removeClass('on'); labelCtx.clearRect(0, 0, labelCanvas.width, labelCanvas.height); }
 }
 
 function resetAll() {
   isPlaying = false;
-  playBtn.html('▶ PLAY').removeClass('stop');
+  playBtn.html('▶ PLAY').removeClass('danger').addClass('primary');
   molecules = []; flashes = [];
   countAInput.value(0); countBInput.value(0);
   speedSlider.value(3.0); volumeSlider.value(5);
@@ -842,7 +873,6 @@ function resetAll() {
 
   globalSimTime = 0; chartSampleAccumulator = 0; 
   
-  // FIX CHỐT: GIỮ NGUYÊN BỘ NHỚ LỊCH SỬ ĐỂ KHÔNG LÀM ĐỨT LINK HIT-TESTING CHUỘT
   concHistory.length = 0; concSelectedTime = null; concClickRequest = null;
   rateHistory.length = 0; rateRolling.length = 0;
   
@@ -862,7 +892,7 @@ function updateCountsPanel() {
   if (cntCEl) cntCEl.textContent = counts.C; if (cntDEl) cntDEl.textContent = counts.D;
 }
 
-// ---------------- Molecule class ----------------
+// ---------------- LỚP PHÂN TỬ VÀ HIỆU ỨNG ----------------
 class Molecule {
   constructor(type, pos) {
     this.type = type; this.pos = pos.copy(); this.vel = p5.Vector.random3D();
@@ -907,7 +937,6 @@ function drawMoleculesBatch() {
   });
 }
 
-// ---------------- Flash effect ----------------
 class Flash {
   constructor(pos, colorArr) { this.pos = pos.copy(); this.color = colorArr; this.age = 0; this.maxAge = 10; }
   update() { this.age++; return this.age < this.maxAge; }
@@ -975,7 +1004,7 @@ function handleCollisions() {
           toRemoveFlag[i] = 1;
           toRemoveFlag[j] = 1;
           
-          // GHI NHẬN PHẢN ỨNG CHO ĐỒ THỊ
+          let newType1, newType2, flashColor, freq;
           if (m1.type === 'A' || m1.type === 'B') {
             newType1 = 'C'; newType2 = 'D'; flashColor = [255, 45, 45]; freq = 220; fwdCountThisFrame++; 
           } else {
@@ -1022,7 +1051,7 @@ function clampInsideBox(pos, radius) {
   pos.x = constrain(pos.x, -m, m); pos.y = constrain(pos.y, -m, m); pos.z = constrain(pos.z, -m, m); return pos;
 }
 
-// ---------------- Draw loop ----------------
+// ---------------- THUẬT TOÁN V=K[A][B] MACRO-KINETICS ----------------
 function draw() {
   background(0, 0, 2);
 
@@ -1065,65 +1094,75 @@ function draw() {
       handleCollisions();
     });
 
+    let N_A = 0, N_B = 0, N_C = 0, N_D = 0;
+    molecules.forEach(m => {
+        if(m.type==='A') N_A++;
+        else if(m.type==='B') N_B++;
+        else if(m.type==='C') N_C++;
+        else if(m.type==='D') N_D++;
+    });
+
+    let pairs_AB = N_A * N_B;
+    let pairs_CD = N_C * N_D;
+
+    rateRolling.push({
+        fwd: fwdCountThisFrame,
+        rev: revCountThisFrame,
+        pairsAB: pairs_AB,
+        pairsCD: pairs_CD,
+        dt: FIXED_DT
+    });
+
+    if (rateRolling.length > 120) rateRolling.shift(); 
+
+    let sumCollisions = 0;
+    let sumPairsDt = 0;
+    for (let i = 0; i < rateRolling.length; i++) {
+        let r = rateRolling[i];
+        sumCollisions += r.fwd;
+        sumPairsDt += r.pairsAB * r.dt;
+        if (reactionMode === 'reversible') {
+            sumCollisions += r.rev;
+            sumPairsDt += r.pairsCD * r.dt;
+        }
+    }
+
+    let k_global = sumPairsDt > 0 ? (sumCollisions / sumPairsDt) : 0;
+    
+    let currentRateF = k_global * pairs_AB;
+    let currentRateR = (reactionMode === 'reversible') ? (k_global * pairs_CD) : 0;
+
     if (isWaitingForFirstReaction) {
-        // GHI NHẬN ĐIỂM XUẤT PHÁT ĐỒ THỊ TỐC ĐỘ (T=0)
-        let totalFwd = 0;
-        let totalRev = 0;
-        let ab = 0, cd = 0;
-        molecules.forEach(m => { if(m.type==='A' || m.type==='B') ab++; else cd++; });
-        
         if (fwdCountThisFrame > 0 || revCountThisFrame > 0) {
             isWaitingForFirstReaction = false;
+            globalSimTime = 0;
+            chartSampleAccumulator = 0;
             
-            // Xóa điểm đệm, đưa vào điểm t=0 thực tế từ hệ thống lấy mẫu ban đầu
-            let currentRateF = fwdCountThisFrame / FIXED_DT;
-            let currentRateR = revCountThisFrame / FIXED_DT;
+            concHistory.length = 0;
+            rateHistory.length = 0;
             
+            concHistory.push({ t: 0, ab: N_A + N_B, cd: N_C + N_D });
             rateHistory.push({ t: 0, fwd: Math.round(currentRateF*10)/10, rev: Math.round(currentRateR*10)/10 });
-            rateRolling.push({ fwd: fwdCountThisFrame, rev: revCountThisFrame });
         }
     } else {
         globalSimTime += FIXED_DT;
         chartSampleAccumulator += FIXED_DT;
         
-        rateRolling.push({ fwd: fwdCountThisFrame, rev: revCountThisFrame });
-        
-        let totalMols = molecules.length;
-        let windowFrames = totalMols > 5000 ? 90 : (totalMols > 2000 ? 45 : 20); 
-        if (rateRolling.length > windowFrames) rateRolling.shift();
-        
         if (chartSampleAccumulator >= CHART_SAMPLE_INTERVAL) {
             chartSampleAccumulator -= CHART_SAMPLE_INTERVAL;
             
-            let sumF = 0, sumR = 0, sumW = 0;
-            let len = rateRolling.length;
-            for (let i = 0; i < len; i++) {
-                let w = i + 1; 
-                sumF += rateRolling[i].fwd * w;
-                sumR += rateRolling[i].rev * w;
-                sumW += w;
-            }
-            
-            let currentRateF = sumW > 0 ? (sumF / sumW) / FIXED_DT : 0;
-            let currentRateR = sumW > 0 ? (sumR / sumW) / FIXED_DT : 0;
-
-            let f = Math.round(currentRateF * 10) / 10;
-            let r = Math.round(currentRateR * 10) / 10;
             let roundedTime = Math.round(globalSimTime * 100) / 100;
-
-            let ab = 0, cd = 0;
-            for(let i=0; i<molecules.length; i++){
-                if(molecules[i].type === 'A' || molecules[i].type === 'B') ab++; else cd++;
-            }
             
-            concHistory.push({ t: roundedTime, ab, cd });
+            concHistory.push({ t: roundedTime, ab: N_A + N_B, cd: N_C + N_D });
             if (concHistory.length > CHART_MAX_SAMPLES) concHistory.shift();
 
-            rateHistory.push({ t: roundedTime, fwd: f, rev: r });
+            rateHistory.push({ t: roundedTime, fwd: Math.round(currentRateF*10)/10, rev: Math.round(currentRateR*10)/10 });
             if (rateHistory.length > CHART_MAX_SAMPLES) rateHistory.shift();
         }
     }
   }
+
+  if (concChartCanvas && concChartCanvas.width === 0) resizeChartCanvases();
 
   if (showConcChart) drawConcChart();
   if (showRateChart) drawRateChart();

@@ -1,436 +1,137 @@
-@font-face {
-  font-family: 'Arial';
-  src: local('Arial');
+body, html {
+  margin: 0; padding: 0; height: 100%;
+  font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+  background-color: #0f1115;
+  color: #e2e8f0;
 }
 
-* {
-  box-sizing: border-box;
-  font-family: Arial, Helvetica, sans-serif;
+#app-container {
+  display: flex; height: 100vh; overflow: hidden;
 }
 
-html, body {
-  margin: 0;
-  padding: 0;
-  width: 100%;
-  height: 100%;
-  overflow: hidden;
-  background: #000000;
-}
-
-#app {
-  display: flex;
-  width: 100vw;
-  height: 100vh;
-}
-
+/* SIDEBAR & GROUPS */
 #sidebar {
-  width: 300px;
-  min-width: 300px;
-  height: 100vh;
-  background: #121216;
-  border-right: 1px solid #2a2a30;
-  padding: 18px 16px;
-  overflow-y: auto;
-  color: #eaeaea;
-  display: flex;
-  flex-direction: column;
-  gap: 16px;
-  z-index: 2;
+  width: 320px; background-color: #1a1d24;
+  border-right: 1px solid #2a2d35;
+  display: flex; flex-direction: column; gap: 16px;
+  padding: 20px; box-sizing: border-box; overflow-y: auto;
+  box-shadow: 2px 0 10px rgba(0,0,0,0.5);
+  z-index: 10;
 }
 
-.title-block {
-  text-align: center;
-}
-
-.title-block h1 {
-  font-size: 15px;
-  letter-spacing: 0.5px;
-  color: #ffffff;
-  margin: 0 0 4px 0;
-  line-height: 1.3;
-}
-
-.title-block h2 {
-  font-size: 13px;
-  color: #7dd3fc;
-  margin: 0;
-  font-weight: 600;
-  letter-spacing: 1px;
+#sidebar h2 {
+  margin: 0; font-size: 16px; font-weight: 700; line-height: 1.4;
+  text-align: center; color: #f8fafc; letter-spacing: 1px;
 }
 
 .control-group {
-  display: flex;
-  flex-direction: column;
-  gap: 6px;
+  background: #222630; border-radius: 8px; padding: 16px;
+  border: 1px solid #2f3542;
 }
 
-.control-group label {
-  font-size: 13px;
-  color: #b8b8c0;
+.control-group h3 {
+  margin: 0 0 12px 0; font-size: 11px;
+  text-transform: uppercase; color: #94a3b8; letter-spacing: 1.2px;
 }
 
-input[type="number"] {
-  background: #1c1c22;
-  border: 1px solid #33333c;
-  color: #fff;
-  padding: 10px 12px;
-  border-radius: 8px;
-  font-size: 15px;
-  width: 100%;
+/* NÚT BẤM (BUTTONS) */
+.btn-row { display: flex; gap: 10px; }
+.btn-row > * { flex: 1; }
+.btn-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; }
+
+.control-btn {
+  background: #2a2d35; color: #cbd5e1;
+  border: 1px solid #3f4451; border-radius: 6px;
+  padding: 10px; font-size: 13px; font-weight: 600;
+  cursor: pointer; transition: all 0.2s ease;
+  text-align: center; user-select: none;
+}
+.control-btn:hover { background: #3f4451; color: #fff; }
+.control-btn:active { transform: scale(0.96); }
+
+.control-btn.primary { background: #2563eb; color: #fff; border-color: #1d4ed8; }
+.control-btn.primary:hover { background: #1d4ed8; }
+.control-btn.danger { background: #dc2626; color: #fff; border-color: #b91c1c; }
+.control-btn.danger:hover { background: #b91c1c; }
+
+.control-btn.toggle.active,
+.control-btn.toggle.on {
+  background: #059669; color: #fff; border-color: #047857;
 }
 
-input[type="number"]:focus {
-  outline: none;
-  border-color: #4f9dff;
+/* INPUT & SLIDER */
+.input-row {
+  display: flex; align-items: center; justify-content: space-between;
+  margin-bottom: 10px; font-size: 14px;
 }
+.input-row:last-child { margin-bottom: 0; }
+.input-row input {
+  width: 100px; background: #111827; color: #fff;
+  border: 1px solid #3f4451; border-radius: 4px;
+  padding: 6px 10px; font-size: 14px; outline: none; text-align: right;
+}
+.input-row input:focus { border-color: #3b82f6; }
 
-input[type="range"] {
-  -webkit-appearance: none;
-  width: 100%;
-  height: 28px;
-  background: transparent;
-  touch-action: pan-y;
+.slider-row { margin-bottom: 12px; }
+.slider-row:last-child { margin-bottom: 0; }
+.slider-row label {
+  display: flex; justify-content: space-between; font-size: 13px; margin-bottom: 6px;
 }
+.slider-row span { font-weight: bold; color: #60a5fa; }
+input[type=range] { width: 100%; cursor: pointer; accent-color: #3b82f6; }
 
-input[type="range"]::-webkit-slider-runnable-track {
-  height: 6px;
-  border-radius: 4px;
-  background: #2a2a32;
-}
+/* KHU VỰC CANVAS 3D */
+#canvas-holder { flex: 1; position: relative; overflow: hidden; }
+canvas { display: block; outline: none; }
+#labelCanvas { position: absolute; top: 0; left: 0; pointer-events: none; }
 
-input[type="range"]::-webkit-slider-thumb {
-  -webkit-appearance: none;
-  width: 24px;
-  height: 24px;
-  margin-top: -9px;
-  border-radius: 50%;
-  background: #4f9dff;
-  border: 2px solid #ffffff;
-  cursor: pointer;
-}
-
-input[type="range"]::-moz-range-track {
-  height: 6px;
-  border-radius: 4px;
-  background: #2a2a32;
-}
-
-input[type="range"]::-moz-range-thumb {
-  width: 22px;
-  height: 22px;
-  border-radius: 50%;
-  background: #4f9dff;
-  border: 2px solid #ffffff;
-  cursor: pointer;
-}
-
-.btn-row {
-  display: flex;
-  gap: 10px;
-  margin-top: 4px;
-}
-
-.btn {
-  flex: 1;
-  padding: 12px 8px;
-  border-radius: 10px;
-  border: none;
-  font-size: 14px;
-  font-weight: bold;
-  letter-spacing: 0.5px;
-  cursor: pointer;
-  color: #fff;
-  -webkit-tap-highlight-color: transparent;
-  touch-action: manipulation;
-}
-
-.btn-play {
-  background: #1f9d55;
-}
-.btn-play.stop {
-  background: #b23b3b;
-}
-
-.btn-reset {
-  background: #3a3a45;
-}
-
-.btn-label {
-  width: 100%;
-  background: #3a3a45;
-}
-
-.btn-label.on {
-  background: #2563eb;
-}
-
-.btn-chart {
-  width: 100%;
-  background: #3a3a45;
-}
-
-.btn-chart.on {
-  background: #d97706;
-}
-
-.btn-mode {
-  background: #2a2a32;
-  font-size: 12.5px;
-  padding: 10px 6px;
-}
-
-.btn-mode.active {
-  background: #7c3aed;
-}
-
-.btn:active {
-  transform: scale(0.96);
-}
-
-.legend {
-  display: flex;
-  flex-wrap: wrap;
-  gap: 10px;
-  margin-top: 6px;
-}
-
-.legend-item {
-  display: flex;
-  align-items: center;
-  gap: 6px;
-  font-size: 13px;
-  color: #d0d0d8;
-}
-
-.dot {
-  width: 12px;
-  height: 12px;
-  border-radius: 50%;
-  display: inline-block;
-}
-
-.hint {
-  font-size: 11px;
-  color: #7a7a85;
-  line-height: 1.4;
-  margin-top: auto;
-}
-
-#canvas-holder {
-  flex: 1;
-  height: 100vh;
-  background: #000000;
-  position: relative;
-  overflow: hidden;
-}
-
-#canvas-holder canvas {
-  display: block;
-}
-
-#labelCanvas {
-  position: absolute;
-  top: 0;
-  left: 0;
-  pointer-events: none;
-  z-index: 3;
-}
-
-/* Chart panels: top-left of canvas, stacked vertically in a scientific,
-   consistent order (concentration chart above collision chart). */
-#leftPanels {
-  position: absolute;
-  top: 14px;
-  left: 14px;
-  z-index: 4;
-  display: flex;
-  flex-direction: column;
-  gap: 10px;
-  align-items: flex-start;
-  pointer-events: none;
-}
-
-/* Counts panel: top-right of canvas (not a graph, kept separate on the
-   opposite side so the two data groups never overlap). */
-#rightPanels {
-  position: absolute;
-  top: 14px;
-  right: 14px;
-  z-index: 4;
-  display: flex;
-  flex-direction: column;
-  gap: 10px;
-  align-items: flex-end;
-  pointer-events: none;
-}
-
+/* BẢNG SỐ LƯỢNG NỔI */
 #countsPanel {
-  background: rgba(18, 18, 22, 0.72);
-  border: 1px solid rgba(255, 255, 255, 0.12);
-  border-radius: 10px;
-  padding: 10px 14px;
-  color: #eaeaea;
-  font-size: 13px;
-  min-width: 110px;
-  backdrop-filter: blur(4px);
-  user-select: none;
-  /* Must capture pointer events so hovering it blocks canvas orbit/zoom,
-     even though it displays read-only data. */
-  pointer-events: auto;
+  position: absolute; top: 20px; right: 20px;
+  background: rgba(26, 29, 36, 0.85); backdrop-filter: blur(8px);
+  padding: 16px; border-radius: 10px; border: 1px solid rgba(255,255,255,0.1);
+  box-shadow: 0 4px 15px rgba(0,0,0,0.3); pointer-events: none; z-index: 5;
+}
+.count-item {
+  font-size: 14px; font-weight: bold; margin-bottom: 8px;
+  display: flex; align-items: center; gap: 8px;
+}
+.count-item:last-child { margin-bottom: 0; }
+.color-box {
+  width: 12px; height: 12px; border-radius: 3px; display: inline-block;
 }
 
-.counts-title {
-  font-size: 11px;
-  letter-spacing: 1px;
-  color: #9aa0aa;
-  margin-bottom: 6px;
-  font-weight: bold;
-}
-
-.counts-row {
-  display: flex;
-  align-items: center;
-  gap: 6px;
-  line-height: 1.6;
-}
-
-.counts-dot {
-  width: 9px;
-  height: 9px;
-  border-radius: 50%;
-  display: inline-block;
-  flex-shrink: 0;
+/* ĐỒ THỊ XẾP DỌC GỌN GÀNG */
+.panels-container {
+  position: absolute; 
+  bottom: 20px; 
+  left: 20px; 
+  width: 340px; 
+  max-height: calc(100vh - 40px); 
+  display: flex; 
+  flex-direction: column; 
+  justify-content: flex-end;
+  gap: 12px; 
+  pointer-events: none;
+  z-index: 5;
 }
 
 .chart-panel {
-  background: rgba(18, 18, 22, 0.72);
-  border: 1px solid rgba(255, 255, 255, 0.12);
-  border-radius: 10px;
-  padding: 10px 12px;
-  color: #eaeaea;
-  width: 260px;
-  backdrop-filter: blur(4px);
-  user-select: none;
-  /* Charts must receive click events to select a data point, and hovering
-     them must also block canvas orbit/zoom underneath. */
-  pointer-events: auto;
+  width: 100%; 
+  height: 180px; 
+  min-height: 140px;
+  background: rgba(26, 29, 36, 0.85); backdrop-filter: blur(8px);
+  border-radius: 10px; border: 1px solid rgba(255,255,255,0.1);
+  padding: 8px 12px; box-sizing: border-box; box-shadow: 0 8px 20px rgba(0,0,0,0.4);
+  pointer-events: auto; 
+  display: flex; 
+  flex-direction: column;
 }
 
-.chart-panel.hidden {
-  display: none;
-}
-
-.chart-title {
-  font-size: 11px;
-  letter-spacing: 1px;
-  color: #9aa0aa;
-  margin-bottom: 6px;
-  font-weight: bold;
-}
-
-.chart-legend {
-  display: flex;
-  gap: 12px;
-  font-size: 11px;
-  color: #d0d0d8;
-  margin-bottom: 6px;
-}
-
-.chart-legend span {
-  display: flex;
-  align-items: center;
-  gap: 4px;
-}
-
-.chart-dot {
-  width: 9px;
-  height: 9px;
-  border-radius: 50%;
-  display: inline-block;
-}
+.chart-panel.hidden { display: none !important; }
 
 .chart-panel canvas {
-  width: 100%;
-  height: 130px;
+  width: 100% !important;
+  height: 100% !important;
   display: block;
-  border-radius: 6px;
-  cursor: crosshair;
-}
-
-/* ===== Mobile / touch optimization ===== */
-@media (max-width: 768px) {
-  #app {
-    flex-direction: column;
-  }
-
-  #sidebar {
-    width: 100%;
-    min-width: 100%;
-    height: auto;
-    max-height: 50vh;
-    border-right: none;
-    border-bottom: 1px solid #2a2a30;
-    padding: 14px 14px 10px 14px;
-    gap: 12px;
-  }
-
-  #canvas-holder {
-    flex: 1;
-    height: 50vh;
-    width: 100%;
-  }
-
-  .btn {
-    padding: 14px 8px;
-    font-size: 15px;
-  }
-
-  .btn-mode {
-    font-size: 12px;
-    padding: 12px 6px;
-  }
-
-  input[type="range"]::-webkit-slider-thumb {
-    width: 28px;
-    height: 28px;
-    margin-top: -11px;
-  }
-
-  input[type="number"] {
-    font-size: 16px;
-    padding: 12px;
-  }
-
-  #leftPanels {
-    top: 8px;
-    left: 8px;
-    gap: 6px;
-  }
-
-  #rightPanels {
-    top: 8px;
-    right: 8px;
-    gap: 6px;
-  }
-
-  #countsPanel {
-    padding: 8px 10px;
-    font-size: 12px;
-    min-width: 90px;
-  }
-
-  .chart-panel {
-    width: 46vw;
-    min-width: 150px;
-    padding: 8px 8px;
-  }
-
-  .chart-title,
-  .chart-legend {
-    font-size: 10px;
-  }
-
-  .chart-panel canvas {
-    height: 90px;
-  }
 }

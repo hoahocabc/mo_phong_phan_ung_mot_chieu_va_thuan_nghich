@@ -2,104 +2,86 @@
 <html lang="vi">
 <head>
   <meta charset="UTF-8">
-  <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
-  <title>Mô Phỏng Phản Ứng Thuận Nghịch 3D - Hóa Học ABC</title>
-  <script src="https://cdnjs.cloudflare.com/ajax/libs/p5.js/1.9.4/p5.min.js"></script>
+  <title>Mô Phỏng Phản Ứng Thuận Nghịch - Hóa Học ABC</title>
+  <link rel="stylesheet" href="style.css">
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/p5.js/1.9.4/p5.js"></script>
   <script src="https://cdnjs.cloudflare.com/ajax/libs/p5.js/1.9.4/addons/p5.sound.min.js"></script>
-  <link rel="stylesheet" type="text/css" href="style.css">
 </head>
 <body>
-  <div id="app">
+  <div id="app-container">
+    <!-- BẢNG ĐIỀU KHIỂN (SIDEBAR) -->
     <div id="sidebar">
-      <div class="title-block">
-        <h1>PHẢN ỨNG MỘT CHIỀU VÀ THUẬN NGHỊCH</h1>
-        <h2>HÓA HỌC ABC</h2>
-      </div>
-
+      <h2>MÔ PHỎNG PHẢN ỨNG THUẬN NGHỊCH<br><span style="color: #60a5fa; font-size: 0.85em;">HÓA HỌC ABC</span></h2>
+      
       <div class="control-group">
-        <label for="countA">Số lượng phân tử A (tối đa 10.000)</label>
-        <input type="number" id="countA" min="0" max="10000" value="0" inputmode="numeric">
-      </div>
-
-      <div class="control-group">
-        <label for="countB">Số lượng phân tử B (tối đa 10.000)</label>
-        <input type="number" id="countB" min="0" max="10000" value="0" inputmode="numeric">
-      </div>
-
-      <div class="control-group">
-        <label>Chế độ phản ứng</label>
+        <h3>1. ĐIỀU KHIỂN CHÍNH</h3>
         <div class="btn-row">
-          <button id="modeReversibleBtn" class="btn btn-mode active">⇌ THUẬN NGHỊCH</button>
-          <button id="modeOneWayBtn" class="btn btn-mode">→ MỘT CHIỀU</button>
+          <button id="playBtn" class="control-btn primary">▶ PLAY</button>
+          <button id="resetBtn" class="control-btn danger">⟲ RESET</button>
         </div>
       </div>
 
       <div class="control-group">
-        <label for="speedSlider">Tốc độ di chuyển: <span id="speedVal">3.0</span></label>
-        <input type="range" id="speedSlider" min="0" max="20" step="0.1" value="3.0">
-      </div>
-
-      <div class="control-group">
-        <label for="volumeSlider">Âm lượng va chạm: <span id="volVal">5</span></label>
-        <input type="range" id="volumeSlider" min="0" max="10" step="1" value="5">
-      </div>
-
-      <div class="btn-row">
-        <button id="playBtn" class="btn btn-play">▶ PLAY</button>
-        <button id="resetBtn" class="btn btn-reset">⟲ RESET</button>
-      </div>
-
-      <div class="btn-row">
-        <button id="labelBtn" class="btn btn-label on">🏷 NHÃN: BẬT</button>
-      </div>
-
-      <div class="control-group">
-        <label>Đồ thị</label>
+        <h3>2. CHẾ ĐỘ PHẢN ỨNG</h3>
         <div class="btn-row">
-          <button id="concChartBtn" class="btn btn-chart">📈 NỒNG ĐỘ: TẮT</button>
-        </div>
-        <div class="btn-row">
-          <button id="rateChartBtn" class="btn btn-chart">⚡ TỐC ĐỘ: TẮT</button>
+          <button id="modeReversibleBtn" class="control-btn toggle active">Thuận nghịch</button>
+          <button id="modeOneWayBtn" class="control-btn toggle">Một chiều</button>
         </div>
       </div>
 
-      <div class="legend">
-        <div class="legend-item"><span class="dot" style="background:#2f6bff"></span>A</div>
-        <div class="legend-item"><span class="dot" style="background:#22c55e"></span>B</div>
-        <div class="legend-item"><span class="dot" style="background:#d61fd6"></span>C</div>
-        <div class="legend-item"><span class="dot" style="background:#ff8c1a"></span>D</div>
+      <div class="control-group">
+        <h3>3. CHẤT THAM GIA (T=0)</h3>
+        <div class="input-row">
+          <label>Chất A:</label>
+          <input type="number" id="countA" min="0" max="10000" step="100" value="0">
+        </div>
+        <div class="input-row">
+          <label>Chất B:</label>
+          <input type="number" id="countB" min="0" max="10000" step="100" value="0">
+        </div>
       </div>
-      <p class="hint">Kéo chuột / vuốt để xoay · Lăn chuột / chụm 2 ngón để zoom · Bấm vào đồ thị để xem số liệu</p>
+
+      <div class="control-group">
+        <h3>4. MÔI TRƯỜNG</h3>
+        <div class="slider-row">
+          <label>Tốc độ mô phỏng: <span id="speedVal">3.0</span></label>
+          <input type="range" id="speedSlider" min="0" max="20" step="0.5" value="3.0">
+        </div>
+        <div class="slider-row">
+          <label>Âm lượng va chạm: <span id="volVal">5</span></label>
+          <input type="range" id="volumeSlider" min="0" max="10" step="1" value="5">
+        </div>
+      </div>
+
+      <div class="control-group">
+        <h3>5. CÔNG CỤ HIỂN THỊ</h3>
+        <div class="btn-grid">
+          <button id="labelBtn" class="control-btn toggle on">🏷 Nhãn: BẬT</button>
+          <button id="toggleCountsBtn" class="control-btn toggle on">📊 SL: BẬT</button>
+          <button id="concChartBtn" class="control-btn toggle">📈 Nồng độ: TẮT</button>
+          <button id="rateChartBtn" class="control-btn toggle">⚡ Tốc độ: TẮT</button>
+        </div>
+      </div>
     </div>
 
+    <!-- KHU VỰC ĐỒ HỌA 3D VÀ BẢNG THÔNG SỐ -->
     <div id="canvas-holder">
-      <div id="leftPanels">
-        <div id="concChartPanel" class="chart-panel hidden">
-          <div class="chart-title">NỒNG ĐỘ THEO THỜI GIAN</div>
-          <div class="chart-legend">
-            <span><span class="chart-dot" style="background:#ffffff"></span>A + B</span>
-            <span><span class="chart-dot" style="background:#ff8c1a"></span>C + D</span>
-          </div>
-          <canvas id="concChartCanvas"></canvas>
-        </div>
-
-        <div id="rateChartPanel" class="chart-panel hidden">
-          <div class="chart-title">TỐC ĐỘ PHẢN ỨNG THEO THỜI GIAN</div>
-          <div class="chart-legend">
-            <span><span class="chart-dot" style="background:#ffffff"></span>Chiều thuận</span>
-            <span><span class="chart-dot" style="background:#ff8c1a"></span>Chiều nghịch</span>
-          </div>
-          <canvas id="rateChartCanvas"></canvas>
-        </div>
+      
+      <!-- Bảng số liệu nổi góc trên bên phải -->
+      <div id="countsPanel">
+        <div class="count-item"><span class="color-box" style="background:#2f6bff"></span> Chất A: <span id="cntA">0</span></div>
+        <div class="count-item"><span class="color-box" style="background:#22c55e"></span> Chất B: <span id="cntB">0</span></div>
+        <div class="count-item"><span class="color-box" style="background:#d61fd6"></span> Chất C: <span id="cntC">0</span></div>
+        <div class="count-item"><span class="color-box" style="background:#ff8c1a"></span> Chất D: <span id="cntD">0</span></div>
       </div>
 
-      <div id="rightPanels">
-        <div id="countsPanel">
-          <div class="counts-title">SỐ LƯỢNG</div>
-          <div class="counts-row"><span class="counts-dot" style="background:#2f6bff"></span>A: <b id="cntA">0</b></div>
-          <div class="counts-row"><span class="counts-dot" style="background:#22c55e"></span>B: <b id="cntB">0</b></div>
-          <div class="counts-row"><span class="counts-dot" style="background:#d61fd6"></span>C: <b id="cntC">0</b></div>
-          <div class="counts-row"><span class="counts-dot" style="background:#ff8c1a"></span>D: <b id="cntD">0</b></div>
+      <!-- Khu vực chứa 2 Đồ thị (Góc dưới bên trái) -->
+      <div class="panels-container">
+        <div id="concChartPanel" class="chart-panel hidden">
+          <canvas id="concChartCanvas"></canvas>
+        </div>
+        <div id="rateChartPanel" class="chart-panel hidden">
+          <canvas id="rateChartCanvas"></canvas>
         </div>
       </div>
     </div>
